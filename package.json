@@ -1,0 +1,41 @@
+{
+  "name": "jellylogger",
+  "version": "1.1.0",
+  "description": "A flexible and easy-to-use logger library for Bun applications.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "clean": "rm -rf ./dist",
+    "build:types": "tsc --emitDeclarationOnly --outDir ./dist --project tsconfig.json",
+    "build:js": "bun build ./lib/index.ts --outdir ./dist --target bun",
+    "build": "bun run clean && bun run build:types && bun run build:js",
+    "dev": "bun --watch ./lib/index.ts",
+    "test": "bun test"
+  },
+  "keywords": [
+    "bun",
+    "logger",
+    "logging",
+    "typescript"
+  ],
+  "author": "jellisy",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "5.8.3"
+  },
+  "peerDependencies": {
+    "bun": "1.2.14"
+  }
+}

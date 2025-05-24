@@ -1,0 +1,36 @@
+# Dependency directories
+node_modules
+
+# Build output
+dist
+out
+*.tgz
+
+# Source control
+.github
+
+# IDE/editor files
+.idea
+.DS_Store
+
+# Caches
+.cache
+*.tsbuildinfo
+.eslintcache
+
+# Logs
+logs
+test-logs/
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# Code coverage
+coverage
+*.lcov
+
+# Environment variable files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
