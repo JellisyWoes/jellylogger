@@ -624,7 +624,6 @@ class FileTransport implements Transport {
   private async writeToFile(logString: string): Promise<void> {
     try {
       await this.bunFileOps.write(this.fileInstance, logString);
-      // Remove the size check here - we'll do it in the log method
     } catch (e) {
       console.error(`Failed to write to log file ${this.filePath}:`, e);
       throw e;
@@ -1373,7 +1372,6 @@ const logger: BaseLogger & {
   },
 };
 
-// Export all main classes, enums, interfaces, and logger at the bottom for library consumers
 export {
   ConsoleTransport,
   LogLevel,
