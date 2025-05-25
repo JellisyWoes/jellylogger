@@ -114,6 +114,8 @@ declare interface LoggerOptions {
   redaction?: RedactionConfig;
   /** Pluggable formatter instance */
   pluggableFormatter?: LogFormatter;
+  /** Discord webhook URL for sending logs with discord: true flag */
+  discordWebhookUrl?: string;
 }
 
 /**
@@ -130,12 +132,13 @@ declare interface ChildLoggerOptions {
  * Base logger interface defining core logging methods.
  */
 declare interface BaseLogger {
-  fatal(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  error(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  warn(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  info(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  debug(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  trace(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
+  fatal(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  info(message: string, ...args: unknown[]): void;
+  debug(message: string, ...args: unknown[]): void;
+  trace(message: string, ...args: unknown[]): void;
+  child(childOptions?: ChildLoggerOptions): ChildLogger;
 }
 
 /**
@@ -149,7 +152,7 @@ declare interface Transport {
   /**
    * Flushes any pending log entries.
    */
-  flush?(): Promise<void>;
+  flush?(options?: LoggerOptions): Promise<void>;
 }
 
 /**
@@ -157,7 +160,7 @@ declare interface Transport {
  */
 declare class ConsoleTransport implements Transport {
   log(entry: LogEntry, options: LoggerOptions): Promise<void>;
-  flush(): Promise<void>;
+  flush(options?: LoggerOptions): Promise<void>;
 }
 
 /**
@@ -207,20 +210,20 @@ declare interface InjectedBunFileOperations {
 declare class FileTransport implements Transport {
   constructor(filePath: string, rotationConfig?: LogRotationConfig, bunOps?: Partial<InjectedBunFileOperations>);
   log(entry: LogEntry, options: LoggerOptions): Promise<void>;
-  flush(): Promise<void>;
+  flush(options?: LoggerOptions): Promise<void>;
 }
 
 /**
- * Child logger that inherits configuration from parent but can have its own context.
+ * ChildLogger class to create loggers with inherited configuration and specific context.
  */
 declare class ChildLogger implements BaseLogger {
   constructor(parentLogger: typeof logger, childOptions?: ChildLoggerOptions);
-  fatal(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  error(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  warn(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  info(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  debug(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
-  trace(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void;
+  fatal(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  info(message: string, ...args: unknown[]): void;
+  debug(message: string, ...args: unknown[]): void;
+  trace(message: string, ...args: unknown[]): void;
   child(childOptions?: ChildLoggerOptions): ChildLogger;
 }
 
@@ -228,23 +231,77 @@ declare class ChildLogger implements BaseLogger {
  * Logger utility for consistent output.
  */
 declare const logger: {
-  options: Omit<Required<LoggerOptions>, 'formatter' | 'customConsoleColors' | 'redaction' | 'pluggableFormatter'> & { 
+  options: Omit<Required<LoggerOptions>, 'formatter' | 'customConsoleColors' | 'redaction' | 'pluggableFormatter' | 'discordWebhookUrl'> & { 
     formatter?: LoggerOptions['formatter'], 
     customConsoleColors?: LoggerOptions['customConsoleColors'],
     redaction?: LoggerOptions['redaction'],
-    pluggableFormatter?: LoggerOptions['pluggableFormatter']
+    pluggableFormatter?: LoggerOptions['pluggableFormatter'],
+    discordWebhookUrl?: LoggerOptions['discordWebhookUrl']
   };
   setOptions(newOptions: LoggerOptions): void;
   resetOptions(): void;
-  fatal: (message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]) => void;
-  error: (message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]) => void;
-  warn: (message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]) => void;
-  info: (message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]) => void;
-  debug: (message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]) => void;
-  trace: (message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]) => void;
+  fatal: (message: string, ...args: unknown[]) => void;
+  error: (message: string, ...args: unknown[]) => void;
+  warn: (message: string, ...args: unknown[]) => void;
+  info: (message: string, ...args: unknown[]) => void;
+  debug: (message: string, ...args: unknown[]) => void;
+  trace: (message: string, ...args: unknown[]) => void;
   child: (childOptions?: ChildLoggerOptions) => ChildLogger;
   flushAll: () => Promise<void>;
 };
+
+/**
+ * Helper to check if a value is a plain object (record).
+ */
+declare function isRecord(value: unknown): value is Record<string, unknown>;
+
+/**
+ * Helper to check if a value looks like an Error object.
+ */
+declare function isErrorLike(value: unknown): value is { name: string; message: string; stack?: string; cause?: unknown };
+
+/**
+ * Serializes an Error object with optional depth limiting for causes.
+ */
+declare function serializeError(error: Error, maxDepth?: number): Record<string, unknown>;
+
+/**
+ * Safely converts unknown arguments to serializable format with circular reference detection.
+ */
+declare function processLogArgs(args: unknown[]): unknown[];
+
+/**
+ * Applies redaction to a log entry.
+ * @param entry - The log entry to redact
+ * @param redactionConfig - Optional redaction configuration
+ * @param target - Where the redaction should apply ('console', 'file', or 'both')
+ * @returns A new log entry with redacted data, or the original entry if no redaction is needed.
+ */
+declare function getRedactedEntry(
+  entry: LogEntry,
+  redactionConfig?: RedactionConfig,
+  target?: 'console' | 'file'
+): LogEntry;
+
+/**
+ * Deeply clones and redacts an object based on the redaction configuration.
+ * @param obj - The object to redact
+ * @param config - Redaction configuration
+ * @param path - Current path in the object (used for recursion)
+ * @param seen - Set to detect circular references
+ * @returns A new object with redacted values
+ */
+declare function redactObject(
+  obj: any,
+  config: RedactionConfig,
+  path?: string,
+  seen?: WeakSet<object>
+): any;
+
+/**
+ * Default logger options.
+ */
+declare const defaultOptions: LoggerOptions;
 
 export {
   LogLevel,
@@ -266,4 +323,11 @@ export {
   logger,
   CustomConsoleColors,
   DiscordRateLimitResponse,
+  isRecord,
+  isErrorLike,
+  serializeError,
+  processLogArgs,
+  getRedactedEntry,
+  redactObject,
+  defaultOptions,
 };
