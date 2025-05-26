@@ -44,14 +44,24 @@ declare type CustomConsoleColors = Partial<{
  * Configuration for sensitive data redaction.
  */
 declare interface RedactionConfig {
-  /** Keys to redact in structured data and objects */
-  keys: string[];
-  /** Replacement text for redacted values. Default: '[REDACTED]' */
-  replacement?: string;
+  /** Keys to redact in structured data and objects. Supports dot notation for nested keys (e.g., 'user.password') and wildcards (e.g., '*.token', 'user.*') */
+  keys?: string[];
+  /** Regular expressions for key matching. More flexible than string keys. */
+  keyPatterns?: RegExp[];
+  /** Regular expressions to match and redact values regardless of their keys */
+  valuePatterns?: RegExp[];
+  /** Whether to redact sensitive patterns in log messages and string arguments. Default: false */
+  redactStrings?: boolean;
+  /** String patterns to redact in messages and string args (e.g., credit card numbers, SSNs) */
+  stringPatterns?: RegExp[];
+  /** Replacement text for redacted values or a function for custom replacement. Default: '[REDACTED]' */
+  replacement?: string | ((value: unknown, key: string, path: string) => string);
   /** Whether to perform case-insensitive key matching. Default: true */
   caseInsensitive?: boolean;
   /** Where to apply redaction: 'console', 'file', or 'both'. Default: 'both' */
   redactIn?: 'console' | 'file' | 'both';
+  /** Whether to log when redaction occurs for debugging/auditing. Default: false */
+  auditRedaction?: boolean;
 }
 
 /**
@@ -292,11 +302,46 @@ declare function getRedactedEntry(
  * @returns A new object with redacted values
  */
 declare function redactObject(
-  obj: any,
+  obj: unknown,
   config: RedactionConfig,
   path?: string,
   seen?: WeakSet<object>
-): any;
+): unknown;
+
+/**
+ * Checks if a key path matches any of the redaction patterns.
+ * @param keyPath - The full path to the key (e.g., 'user.profile.email')
+ * @param key - The current key being checked
+ * @param config - Redaction configuration
+ * @returns True if the key should be redacted
+ */
+declare function shouldRedactKey(keyPath: string, key: string, config: RedactionConfig): boolean;
+
+/**
+ * Checks if a value matches any of the value patterns for redaction.
+ * @param value - The value to check
+ * @param config - Redaction configuration
+ * @returns True if the value should be redacted
+ */
+declare function shouldRedactValue(value: unknown, config: RedactionConfig): boolean;
+
+/**
+ * Redacts sensitive patterns in a string (messages, string arguments).
+ * @param str - The string to redact
+ * @param config - Redaction configuration
+ * @returns The string with sensitive patterns redacted
+ */
+declare function redactString(str: string, config: RedactionConfig): string;
+
+/**
+ * Checks if an object needs redaction to avoid unnecessary cloning.
+ * @param obj - The object to check
+ * @param config - Redaction configuration
+ * @param path - Current path in the object
+ * @param seen - Set to detect circular references
+ * @returns True if the object contains data that needs redaction
+ */
+declare function needsRedaction(obj: unknown, config: RedactionConfig, path?: string, seen?: WeakSet<object>): boolean;
 
 /**
  * Default logger options.
@@ -329,5 +374,9 @@ export {
   processLogArgs,
   getRedactedEntry,
   redactObject,
+  shouldRedactKey,
+  shouldRedactValue,
+  redactString,
+  needsRedaction,
   defaultOptions,
 };
