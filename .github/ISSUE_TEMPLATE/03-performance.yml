@@ -1,0 +1,74 @@
+name: ⚡ Performance Issue
+description: Report a performance problem or suggest optimizations
+title: "[Performance]: "
+labels: ["performance", "triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a performance issue! This helps us make jellylogger faster.
+        
+  - type: input
+    id: contact
+    attributes:
+      label: Contact Details
+      description: How can we get in touch with you if we need more info?
+      placeholder: ex. @username on Discord
+    validations:
+      required: false
+      
+  - type: textarea
+    id: performance-issue
+    attributes:
+      label: Describe the performance issue
+      description: What specific performance problem are you experiencing?
+      placeholder: Logging is slow when...
+    validations:
+      required: true
+      
+  - type: textarea
+    id: benchmark-data
+    attributes:
+      label: Benchmark data
+      description: If available, provide timing data, memory usage, or other metrics
+      render: shell
+    validations:
+      required: false
+      
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      description: What runtime are you using?
+      options:
+        - Bun
+        - Node.js
+        - Other (please specify)
+    validations:
+      required: true
+      
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment details
+      description: OS, runtime version, hardware specs, etc.
+    validations:
+      required: false
+      
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce the performance issue?
+    validations:
+      required: true
+      
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](../../CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

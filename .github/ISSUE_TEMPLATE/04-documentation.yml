@@ -1,0 +1,68 @@
+name: 📚 Documentation
+description: Report missing, unclear, or incorrect documentation
+title: "[Docs]: "
+labels: ["documentation", "triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve our documentation! Clear docs make jellylogger better for everyone.
+        
+  - type: input
+    id: contact
+    attributes:
+      label: Contact Details
+      description: How can we get in touch with you if we need more info?
+      placeholder: ex. @username on Discord
+    validations:
+      required: false
+      
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation type
+      description: What type of documentation issue is this?
+      options:
+        - Missing documentation
+        - Unclear/confusing documentation
+        - Incorrect/outdated documentation
+        - Typo or grammar error
+        - Example code doesn't work
+        - Other
+    validations:
+      required: true
+      
+  - type: input
+    id: doc-location
+    attributes:
+      label: Documentation location
+      description: Where is the documentation issue? (URL, file path, etc.)
+      placeholder: https://github.com/jellisy/jellylogger/blob/main/README.md
+    validations:
+      required: false
+      
+  - type: textarea
+    id: issue-description
+    attributes:
+      label: Describe the issue
+      description: What specifically needs to be fixed or improved?
+    validations:
+      required: true
+      
+  - type: textarea
+    id: suggested-improvement
+    attributes:
+      label: Suggested improvement
+      description: How would you improve this documentation?
+    validations:
+      required: false
+      
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](../../CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

@@ -1,0 +1,70 @@
+name: 🔒 Security Vulnerability
+description: Report a security vulnerability (for non-critical issues only)
+title: "[Security]: "
+labels: ["security", "triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **IMPORTANT**: If this is a critical security vulnerability, please DO NOT file a public issue.
+        Instead, email us privately at [security@example.com] or use GitHub's private vulnerability reporting.
+        
+        This template is for non-critical security improvements and best practices.
+        
+  - type: input
+    id: contact
+    attributes:
+      label: Contact Details
+      description: How can we get in touch with you if we need more info?
+      placeholder: ex. @username on Discord
+    validations:
+      required: false
+      
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity Level
+      description: How severe is this security issue?
+      options:
+        - Low (security improvement suggestion)
+        - Medium (potential security weakness)
+        - High (contact us privately instead)
+        - Critical (contact us privately instead)
+    validations:
+      required: true
+      
+  - type: textarea
+    id: vulnerability-description
+    attributes:
+      label: Describe the security issue
+      description: What is the security concern or improvement suggestion?
+    validations:
+      required: true
+      
+  - type: textarea
+    id: impact
+    attributes:
+      label: Potential impact
+      description: What could happen if this issue is not addressed?
+    validations:
+      required: false
+      
+  - type: textarea
+    id: suggested-fix
+    attributes:
+      label: Suggested fix
+      description: How do you think this should be addressed?
+    validations:
+      required: false
+      
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](../../CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
+        - label: I confirm this is NOT a critical security vulnerability
+          required: true
