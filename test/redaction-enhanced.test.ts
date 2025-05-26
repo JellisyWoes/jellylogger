@@ -453,7 +453,7 @@ describe("Enhanced Redaction", () => {
       redactObject(input, config, '', new WeakSet());
 
       expect(debugSpy).toHaveBeenCalledWith(
-        "[REDACTION AUDIT] Redacted key: password"
+        "[REDACTION AUDIT] Redacted key: password at path: password"
       );
       
       debugSpy.mockRestore();
@@ -550,7 +550,14 @@ describe("Enhanced Redaction", () => {
         tokens: ["token_123", "safe_value"]
       };
 
-      const result = redactObject(input, config);
+      const result = redactObject(input, config) as {
+        user: {
+          name: string;
+          password: string;
+          auth: { secret: string };
+        };
+        tokens: string[];
+      };
       
       expect(result.user.name).toBe("john");
       expect(result.user.password).toBe("[COMPLEX_REDACTED]");

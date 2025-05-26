@@ -1,0 +1,57 @@
+import type { LogEntry } from './redaction';
+
+/**
+ * Interface for pluggable formatters.
+ */
+export interface LogFormatter {
+  /**
+   * Format a log entry into a string.
+   * @param entry - The log entry to format
+   * @returns Formatted log string
+   */
+  format(entry: LogEntry): string;
+}
+
+/**
+ * Built-in logfmt formatter.
+ */
+export class LogfmtFormatter implements LogFormatter {
+  format(entry: LogEntry): string {
+    const pairs: string[] = [
+      `ts=${entry.timestamp}`,
+      `level=${entry.levelName.toLowerCase()}`,
+      `msg="${entry.message.replace(/"/g, '\\"')}"`,
+    ];
+
+    if (entry.data) {
+      for (const [key, value] of Object.entries(entry.data)) {
+        const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+        pairs.push(`${key}="${stringValue.replace(/"/g, '\\"')}"`);
+      }
+    }
+
+    if (entry.args.length > 0) {
+      entry.args.forEach((arg, index) => {
+        const stringValue = typeof arg === 'string' ? arg : JSON.stringify(arg);
+        pairs.push(`arg${index}="${stringValue.replace(/"/g, '\\"')}"`);
+      });
+    }
+
+    return pairs.join(' ');
+  }
+}
+
+/**
+ * Built-in NDJSON (newline-delimited JSON) formatter.
+ */
+export class NdjsonFormatter implements LogFormatter {
+  format(entry: LogEntry): string {
+    return JSON.stringify({
+      timestamp: entry.timestamp,
+      level: entry.levelName.toLowerCase(),
+      message: entry.message,
+      ...entry.data,
+      ...(entry.args.length > 0 ? { args: entry.args } : {}),
+    });
+  }
+}

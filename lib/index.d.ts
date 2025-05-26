@@ -62,6 +62,26 @@ declare interface RedactionConfig {
   redactIn?: 'console' | 'file' | 'both';
   /** Whether to log when redaction occurs for debugging/auditing. Default: false */
   auditRedaction?: boolean;
+  /** Security options to prevent redaction bypass */
+  security?: {
+    /** Maximum recursion depth to prevent stack overflow attacks. Default: 100 */
+    maxDepth?: number;
+    /** Whether to check symbol properties for redaction. Default: false */
+    includeSymbols?: boolean;
+    /** Whether to check non-enumerable properties. Default: false */
+    includeNonEnumerable?: boolean;
+  };
+  /** Hash redacted values instead of replacing with text. Takes precedence over replacement when enabled */
+  hashRedacted?: {
+    /** Enable hashing of redacted values. Default: false */
+    enabled: boolean;
+    /** Hash algorithm to use. Default: 'sha256' */
+    algorithm?: 'sha256' | 'sha1' | 'md5';
+    /** Include a prefix in the hash output. Default: 'hash:' */
+    prefix?: string;
+    /** Only hash values longer than this length, shorter values use normal replacement. Default: 0 */
+    minLength?: number;
+  };
 }
 
 /**
@@ -294,18 +314,31 @@ declare function getRedactedEntry(
 ): LogEntry;
 
 /**
+ * Checks if an object needs redaction to avoid unnecessary cloning.
+ * @param obj - The object to check
+ * @param config - Redaction configuration
+ * @param path - Current path in the object
+ * @param seen - Set to detect circular references
+ * @param depth - Current recursion depth
+ * @returns True if the object contains data that needs redaction
+ */
+declare function needsRedaction(obj: unknown, config: RedactionConfig, path?: string, seen?: WeakSet<object>, depth?: number): boolean;
+
+/**
  * Deeply clones and redacts an object based on the redaction configuration.
  * @param obj - The object to redact
  * @param config - Redaction configuration
  * @param path - Current path in the object (used for recursion)
  * @param seen - Set to detect circular references
+ * @param depth - Current recursion depth
  * @returns A new object with redacted values
  */
 declare function redactObject(
   obj: unknown,
   config: RedactionConfig,
   path?: string,
-  seen?: WeakSet<object>
+  seen?: WeakSet<object>,
+  depth?: number
 ): unknown;
 
 /**
@@ -341,7 +374,7 @@ declare function redactString(str: string, config: RedactionConfig): string;
  * @param seen - Set to detect circular references
  * @returns True if the object contains data that needs redaction
  */
-declare function needsRedaction(obj: unknown, config: RedactionConfig, path?: string, seen?: WeakSet<object>): boolean;
+declare function needsRedaction(obj: unknown, config: RedactionConfig, path?: string, seen?: WeakSet<object>, depth?: number): boolean;
 
 /**
  * Default logger options.

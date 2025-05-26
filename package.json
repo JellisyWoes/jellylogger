@@ -14,11 +14,11 @@
   },
   "scripts": {
     "clean": "rm -rf ./dist",
-    "build:types": "tsc --emitDeclarationOnly --outDir ./dist --project tsconfig.json",
-    "build:js": "bun build ./lib/index.ts --outdir ./dist --target bun",
-    "build": "bun run clean && bun run build:types && bun run build:js",
-    "dev": "bun --watch ./lib/index.ts",
-    "test": "bun test"
+    "build:types": "tsc --emitDeclarationOnly",
+    "build:js": "bun build ./lib/index.ts --outdir ./dist --target bun --sourcemap --bundle --outfile index.js",
+    "build": "bun run build:js && bun run build:types",
+    "prebuild": "bun run clean",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "bun",
