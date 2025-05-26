@@ -395,7 +395,7 @@ describe("ConsoleTransport", () => {
       args: [],
     };
     transport.log(entry, { formatter: () => 12345 as any } as LoggerOptions);
-    expect(consoleSpies.info).toHaveBeenCalledWith(12345);
+    expect(consoleSpies.info).toHaveBeenCalledWith("12345");
   });
 
   it("should support formatter with args", () => {

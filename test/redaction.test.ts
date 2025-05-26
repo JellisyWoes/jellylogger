@@ -322,4 +322,58 @@ describe("Redaction", () => {
     expect(loggedData.data.Password).toBe("secret2"); // Should not be redacted (different case)
     expect(loggedData.data.TOKEN).toBe("secret3"); // Should not be redacted (not matching "token")
   });
+
+  it("should export redaction utility functions", () => {
+    // Test that the utility functions are properly exported
+    const { 
+      shouldRedactKey, 
+      shouldRedactValue, 
+      redactString, 
+      needsRedaction,
+      redactObject,
+      getRedactedEntry 
+    } = require("../lib/index");
+    
+    expect(typeof shouldRedactKey).toBe("function");
+    expect(typeof shouldRedactValue).toBe("function");
+    expect(typeof redactString).toBe("function");
+    expect(typeof needsRedaction).toBe("function");
+    expect(typeof redactObject).toBe("function");
+    expect(typeof getRedactedEntry).toBe("function");
+  });
+
+  // Add test for backward compatibility
+  it("should maintain backward compatibility with existing redaction config", () => {
+    const consoleTransport = new ConsoleTransport();
+    
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.INFO,
+      levelName: "INFO",
+      message: "Backward compatibility test",
+      args: [],
+      data: { 
+        password: "secret123",
+        token: "abc456",
+        safe: "ok"
+      }
+    };
+    
+    consoleSpy.mockClear();
+    
+    // Test with old-style config (only keys and replacement)
+    consoleTransport.log(entry, {
+      redaction: {
+        keys: ["password", "token"],
+        replacement: "[LEGACY_REDACTED]"
+      },
+      format: "json"
+    });
+    
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(loggedData.data.password).toBe("[LEGACY_REDACTED]");
+    expect(loggedData.data.token).toBe("[LEGACY_REDACTED]");
+    expect(loggedData.data.safe).toBe("ok");
+  });
 });
