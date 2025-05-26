@@ -103,7 +103,7 @@ export class FileTransport implements Transport {
       } catch (error) {
         // Fallback to default formatting if custom formatter fails
         console.error('Custom formatter failed in FileTransport, using default:', error instanceof Error ? error.message : String(error));
-        logString = this.getDefaultLogString(redactedEntry, options);
+        logString = this.getDefaultLogString(redactedEntry);
       }
     } else if (options.format === 'json') {
       try {
@@ -118,7 +118,7 @@ export class FileTransport implements Transport {
         }) + osEOL;
       }
     } else {
-      logString = this.getDefaultLogString(redactedEntry, options);
+      logString = this.getDefaultLogString(redactedEntry);
     }
 
     const writePromise = this.writeToFile(logString);
@@ -146,7 +146,7 @@ export class FileTransport implements Transport {
     }
   }
 
-  private getDefaultLogString(redactedEntry: LogEntry, options: LoggerOptions): string {
+  private getDefaultLogString(redactedEntry: LogEntry): string {
     const levelString = (LogLevel[redactedEntry.level] || 'UNKNOWN').padEnd(5);
     // Safely process args for file output with circular reference protection
     const argsString = redactedEntry.args.length > 0 ? ' ' + redactedEntry.args.map((arg: unknown) => {

@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     // Environment setup & latest features
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"], // Add DOM for better compatibility
     "target": "ESNext",
     "module": "ESNext",
     "moduleDetection": "force",
@@ -11,9 +11,9 @@
     // Bundler mode
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
+    "verbatimModuleSyntax": false, // Changed: conflicts with bundler mode
     "noEmit": false,
-    "emitDeclarationOnly": true,
+    "emitDeclarationOnly": true, // Changed: you want both JS and declarations
 
     // Declaration files
     "declaration": true,
@@ -28,12 +28,13 @@
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true, // Added: better CommonJS compatibility
 
-    // Some stricter flags (disabled by default)
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
+    // Some stricter flags
+    "noUnusedLocals": true, // Enable for better code quality
+    "noUnusedParameters": true,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["lib/**/*.ts"],
-  "exclude": ["node_modules", "dist", "test", "**/*.test.ts"]
+  "include": ["lib/**/*.ts", "lib/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "test", "**/*.test.ts", "**/*.spec.ts"]
 }

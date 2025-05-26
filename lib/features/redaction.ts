@@ -1,4 +1,4 @@
-import { isRecord, isErrorLike, isPrimitive, mightHaveCircularRefs } from './typeGuards';
+import { isRecord, isPrimitive, mightHaveCircularRefs } from './typeGuards';
 
 /**
  * Configuration for sensitive data redaction.
@@ -200,31 +200,34 @@ export function needsRedaction(obj: unknown, config: RedactionConfig, path: stri
 
   // Handle objects safely
   try {
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        const currentPath = path ? `${path}.${key}` : key;
-        
-        try {
-          // Check if key should be redacted
-          if (shouldRedactKey(currentPath, key, config)) {
-            return true;
-          }
+    // Use isRecord for better type safety
+    if (isRecord(obj)) {
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const currentPath = path ? `${path}.${key}` : key;
           
-          // Get property value safely
-          const propValue = (obj as Record<string, unknown>)[key];
-          
-          // Check if value should be redacted
-          if (shouldRedactValue(propValue, config)) {
-            return true;
+          try {
+            // Check if key should be redacted
+            if (shouldRedactKey(currentPath, key, config)) {
+              return true;
+            }
+            
+            // Get property value safely
+            const propValue = obj[key];
+            
+            // Check if value should be redacted
+            if (shouldRedactValue(propValue, config)) {
+              return true;
+            }
+            
+            // Recursively check nested objects
+            if (needsRedaction(propValue, config, currentPath, seen)) {
+              return true;
+            }
+          } catch {
+            // If we can't process a property, continue to the next one
+            continue;
           }
-          
-          // Recursively check nested objects
-          if (needsRedaction(propValue, config, currentPath, seen)) {
-            return true;
-          }
-        } catch {
-          // If we can't process a property, continue to the next one
-          continue;
         }
       }
     }
@@ -291,39 +294,45 @@ export function redactObject(obj: unknown, config: RedactionConfig, path: string
 
   // Handle objects
   try {
-    const newObj: Record<string, unknown> = {};
-    
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        const currentPath = path ? `${path}.${key}` : key;
-        
-        try {
-          // Get property value safely
-          const propValue = (obj as Record<string, unknown>)[key];
+    // Use isRecord for better type safety
+    if (isRecord(obj)) {
+      const newObj: Record<string, unknown> = {};
+      
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const currentPath = path ? `${path}.${key}` : key;
           
-          // Check if key or value should be redacted
-          if (shouldRedactKey(currentPath, key, config) || shouldRedactValue(propValue, config)) {
-            const replacement = typeof config.replacement === 'function' 
-              ? config.replacement(propValue, key, currentPath)
-              : (config.replacement ?? '[REDACTED]');
+          try {
+            // Get property value safely
+            const propValue = obj[key];
             
-            if (config.auditRedaction === true) {
-              console.debug(`[REDACTION AUDIT] Redacted key: ${key} at path: ${currentPath}`);
+            // Check if key or value should be redacted
+            if (shouldRedactKey(currentPath, key, config) || shouldRedactValue(propValue, config)) {
+              const replacement = typeof config.replacement === 'function' 
+                ? config.replacement(propValue, key, currentPath)
+                : (config.replacement ?? '[REDACTED]');
+              
+              if (config.auditRedaction === true) {
+                console.debug(`[REDACTION AUDIT] Redacted key: ${key} at path: ${currentPath}`);
+              }
+              
+              newObj[key] = replacement;
+            } 
+            else {
+              newObj[key] = redactObject(propValue, config, currentPath, seen);
             }
-            
-            newObj[key] = replacement;
-          } 
-          else {
-            newObj[key] = redactObject(propValue, config, currentPath, seen);
+          } catch {
+            // If we can't process a property, copy it as-is
+            newObj[key] = obj[key];
           }
-        } catch {
-          // If we can't process a property, copy it as-is
-          newObj[key] = (obj as Record<string, unknown>)[key];
         }
       }
+      
+      return newObj;
     }
     
-    return newObj;
+    // If not a record, return as-is
+    return obj;
   } catch {
     // If we can't iterate over the object, return it as-is
     return obj;

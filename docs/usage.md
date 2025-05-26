@@ -4,6 +4,7 @@ JellyLogger is a fast, feature-rich logging library for Bun that supports multip
 
 ## Table of Contents
 
+- [Installation](#installation)
 - [Basic Usage](#basic-usage)
 - [Log Levels](#log-levels)
 - [Structured Logging](#structured-logging)
@@ -13,6 +14,12 @@ JellyLogger is a fast, feature-rich logging library for Bun that supports multip
 - [Redaction](#redaction)
 - [Discord Integration](#discord-integration)
 - [Advanced Features](#advanced-features)
+
+## Installation
+
+```bash
+bun add jellylogger
+```
 
 ## Basic Usage
 
@@ -230,9 +237,14 @@ Protect sensitive data with automatic redaction:
 logger.setOptions({
   redaction: {
     keys: ['password', 'token', 'apiKey', 'creditCard'],
+    keyPatterns: [/secret/i, /auth/i],
+    valuePatterns: [/\d{4}-\d{4}-\d{4}-\d{4}/], // Credit card numbers
     replacement: '[REDACTED]',
     caseInsensitive: true,
-    redactIn: 'both' // 'console', 'file', or 'both'
+    redactIn: 'both', // 'console', 'file', or 'both'
+    redactStrings: true,
+    stringPatterns: [/\b\d{3}-\d{2}-\d{4}\b/], // SSN pattern
+    auditRedaction: false
   }
 });
 

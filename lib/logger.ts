@@ -1,4 +1,4 @@
-import { ConsoleTransport, LogLevel, type LoggerOptions, type Transport } from './transports/ConsoleTransport';
+import { ConsoleTransport, LogLevel, type LoggerOptions } from './transports/ConsoleTransport';
 import { DiscordWebhookTransport } from './transports/DiscordWebhookTransport';
 import { getTimestamp, processLogArgs } from './features/helpers';
 import { isRecord, isErrorLike } from './features/typeGuards';

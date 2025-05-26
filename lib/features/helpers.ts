@@ -1,5 +1,4 @@
-import { EOL as osEOL } from 'os';
-import { isRecord, isErrorLike, isSerializable, isPrimitive, mightHaveCircularRefs } from './typeGuards';
+import { isRecord, isErrorLike, isPrimitive, mightHaveCircularRefs } from './typeGuards';
 
 /**
  * Generates a timestamp string.
