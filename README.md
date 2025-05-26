@@ -14,6 +14,7 @@
     - [Child Loggers](#child-loggers)
     - [Setting Log Level](#setting-log-level)
     - [Logging with Additional Data](#logging-with-additional-data)
+    - [Discord Webhook Integration](#discord-webhook-integration)
     - [Customizing Timestamp Format](#customizing-timestamp-format)
     - [Using JSON Format](#using-json-format)
     - [Using a Custom Formatter](#using-a-custom-formatter)
@@ -28,7 +29,6 @@
       - [Custom Formatters](#custom-formatters)
     - [Sensitive Data Redaction](#sensitive-data-redaction)
     - [Using Multiple Transports](#using-multiple-transports)
-    - [Sending Logs to a Discord Webhook](#sending-logs-to-a-discord-webhook)
     - [Error Handling and Serialization](#error-handling-and-serialization)
     - [Graceful Shutdown](#graceful-shutdown)
   - [API Reference](#api-reference)
@@ -60,16 +60,18 @@
 
 - **Multiple log levels**: `SILENT`, `FATAL`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE` with color-coded console output
 - **Structured logging**: Pass objects as structured data alongside messages with full type safety
-- **Child loggers**: Create contextualized loggers with inherited configuration and automatic data merging
+- **Child loggers**: Create contextualized loggers with inherited configuration and automatic context merging
 - **Enhanced console output**: Customizable colors using Bun's color API (hex, rgb, hsl, hsv, cmyk, ANSI)
 - **File transport**: Write logs to files with comprehensive rotation, compression, and cleanup capabilities
-- **Discord webhook transport**: Send logs to Discord channels with intelligent batching and rate limit handling
+- **Discord webhook transport**: Send logs to Discord channels with intelligent batching, rate limit handling, and per-log control
 - **Async transport support**: Full Promise-based architecture with proper error handling and graceful degradation
 - **Graceful shutdown**: `flushAll()` method ensures all logs are written before application exit
 - **Flexible formatting**: Support for string, JSON, logfmt, NDJSON, and custom formats
 - **Pluggable formatters**: Built-in and custom formatter support with clean interfaces
 - **Sensitive data redaction**: Configurable redaction of sensitive keys in structured data and arguments
+- **Circular reference handling**: Safe serialization of objects with circular references
 - **Enhanced TypeScript safety**: Proper handling of `unknown` types, Error serialization, and type guards
+- **Error serialization**: Deep serialization of Error objects including nested causes
 - **Extensible architecture**: Easy to extend with custom transports and formatters
 
 ## Installation
@@ -114,9 +116,9 @@ logger.trace('This is a trace message.');
 ```
 
 ### Structured Logging
-Pass structured data as the second parameter for enhanced logging:
+Pass structured data as the first parameter for enhanced logging:
 ```typescript
-// Structured data (recommended approach)
+// Structured data as first parameter (recommended approach)
 logger.info('User logged in', { 
   userId: 123, 
   email: 'user@example.com',
@@ -133,36 +135,42 @@ logger.error('Database operation failed',
 
 // Traditional argument-based logging still works
 logger.info('Processing request', 'Some additional info', { requestId: 'abc-123' });
+
+// Error objects are handled specially (not treated as structured data)
+try {
+  throw new Error('Something went wrong');
+} catch (error) {
+  logger.error('Operation failed', { operation: 'user-creation' }, error);
+  // Error is serialized properly, not treated as structured data
+}
 ```
 
 ### Child Loggers
-Create child loggers with inherited configuration and automatic context:
+Create child loggers with inherited configuration and automatic context merging:
 ```typescript
-// Create a child logger with default data and message prefix
+// Create a child logger with context
 const userLogger = logger.child({ 
-  defaultData: { userId: 123, service: 'auth' },
-  messagePrefix: '[AUTH]'
+  context: { userId: 123, service: 'auth' }
 });
 
-userLogger.info('User action completed'); 
-// Output: [AUTH] User action completed (includes userId and service automatically)
+userLogger.info('User action completed', { action: 'login' }); 
+// Output includes both userId, service, and action
 
 // Chain child loggers for nested contexts
 const requestLogger = userLogger.child({ 
-  defaultData: { requestId: 'abc-123', endpoint: '/api/users' } 
+  context: { requestId: 'abc-123', endpoint: '/api/users' } 
 });
 
-requestLogger.debug('Processing step 1'); 
-// Includes userId, service, requestId, and endpoint
+requestLogger.debug('Processing step 1', { step: 'validation' }); 
+// Context includes: userId, service, requestId, endpoint, and step
 
-// Child loggers can have their own children
+// Child loggers inherit all parent configuration
 const operationLogger = requestLogger.child({
-  defaultData: { operationId: 'op-456' },
-  messagePrefix: '[OPERATION]'
+  context: { operationId: 'op-456' }
 });
 
 operationLogger.trace('Detailed operation step');
-// Output: [AUTH] [OPERATION] Detailed operation step (with all inherited data)
+// All context is automatically merged and included
 ```
 
 ### Setting Log Level
@@ -200,12 +208,52 @@ logger.info('User logged in', {
   sessionStart: Date.now()
 });
 
-// Handle errors properly
+// Handle errors properly - they're not treated as structured data
 try {
   throw new Error('Something went wrong');
 } catch (error) {
   logger.error('Operation failed', { operation: 'user-creation' }, error);
 }
+
+// Circular references are handled safely
+const circular: any = { name: 'test' };
+circular.self = circular;
+logger.debug('Circular object', circular); // Safely serialized
+```
+
+### Discord Webhook Integration
+Send specific logs to Discord using the `discord: true` flag:
+```typescript
+// Configure Discord webhook URL
+logger.setOptions({
+  discordWebhookUrl: 'https://discord.com/api/webhooks/your-webhook-id/your-webhook-token'
+});
+
+// Send logs to Discord using the discord flag in structured data
+logger.error('Critical system error', { 
+  discord: true,           // This log will be sent to Discord
+  errorCode: 'SYS_001',
+  severity: 'high',
+  affectedUsers: 1250
+});
+
+logger.info('User login', { 
+  userId: 123,
+  // No discord flag - only goes to regular transports
+});
+
+logger.warn('High memory usage detected', {
+  discord: true,           // Also sent to Discord
+  memoryUsage: '85%',
+  threshold: '80%'
+});
+
+// Discord integration works with all log levels
+logger.fatal('System shutdown imminent', { 
+  discord: true,
+  reason: 'Critical failure detected',
+  estimatedDowntime: '30 minutes'
+});
 ```
 
 ### Customizing Timestamp Format
@@ -407,66 +455,37 @@ const fileTransport = new FileTransport('./app.log', {
   maxFiles: 10,
   compress: true
 });
-const discordTransport = new DiscordWebhookTransport(
-  'https://discord.com/api/webhooks/your-webhook-url', 
-  {
-    batchIntervalMs: 5000,
-    maxBatchSize: 5,
-    username: 'AppLogger'
-  }
-);
 
 logger.setOptions({
-  transports: [consoleTransport, fileTransport, discordTransport],
+  transports: [consoleTransport, fileTransport],
   level: LogLevel.DEBUG,
+  discordWebhookUrl: 'https://discord.com/api/webhooks/your-webhook-url',
   redaction: {
     keys: ['password', 'token'],
     redactIn: 'file' // Only redact in file, not console
   }
 });
 
+// Regular log (console + file)
 logger.info('Application started', { version: '1.0.0', env: 'production' });
-// Goes to console (with colors), file (redacted), and Discord
-```
 
-### Sending Logs to a Discord Webhook
-Send logs to Discord channels with intelligent batching and rate limiting:
-```typescript
-import { DiscordWebhookTransport } from 'jellylogger';
-
-const discordTransport = new DiscordWebhookTransport(
-  'https://discord.com/api/webhooks/your-webhook-id/your-webhook-token', 
-  {
-    batchIntervalMs: 2000,        // Send batches every 2 seconds
-    maxBatchSize: 10,             // Max 10 logs per batch
-    username: 'MyLoggerBot',      // Custom username in Discord
-    maxRetries: 3,                // Retry failed requests 3 times
-    suppressConsoleErrors: false  // Show webhook errors in console
-  }
-);
-
-logger.setOptions({
-  transports: [new ConsoleTransport(), discordTransport],
-  level: LogLevel.INFO,
-});
-
-logger.info('Application started successfully');
-logger.error('Database connection failed', { 
+// Critical log (console + file + Discord)
+logger.error('Database connection failed', {
+  discord: true,
   error: 'Connection timeout',
   retryCount: 3 
 });
-
-// Messages are automatically batched and sent to Discord
-// with proper formatting and rate limit handling
 ```
 
 ### Error Handling and Serialization
-The logger properly handles and serializes Error objects:
+The logger properly handles and serializes Error objects with deep cause serialization:
 ```typescript
 try {
-  throw new Error('Primary error', { cause: new Error('Root cause') });
+  const rootCause = new Error('Database connection failed');
+  const intermediateCause = new Error('Transaction rolled back', { cause: rootCause });
+  throw new Error('User operation failed', { cause: intermediateCause });
 } catch (error) {
-  // Error objects are safely serialized with stack traces and causes
+  // Error objects are safely serialized with full cause chain (up to 3 levels deep)
   logger.error('Operation failed', { operation: 'data-processing' }, error);
 }
 
@@ -475,7 +494,7 @@ try {
   throw { message: 'Custom error object', code: 500 };
 } catch (error) {
   logger.error('Non-standard error caught', error);
-  // Safely handles non-Error objects
+  // Safely handles error-like objects
 }
 
 // Functions, symbols, and other non-serializable types are handled
@@ -485,12 +504,17 @@ logger.debug('Debug info', {
   bigint: 123n,                       // Converted to 123n
   undef: undefined                    // Converted to 'undefined'
 });
+
+// Circular references are detected and handled
+const circular: any = { name: 'test' };
+circular.self = circular;
+logger.info('Circular reference test', circular); // Safely serialized as [Circular Reference]
 ```
 
 ### Graceful Shutdown
 Ensure all logs are written before application shutdown:
 ```typescript
-// Single flush call handles all transports
+// Single flush call handles all transports including Discord
 process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
   await logger.flushAll();
@@ -498,8 +522,8 @@ process.on('SIGINT', async () => {
 });
 
 // Also works with child loggers (they share parent transports)
-const apiLogger = logger.child({ defaultData: { component: 'api' } });
-await logger.flushAll(); // Flushes all transports including those used by child loggers
+const apiLogger = logger.child({ context: { component: 'api' } });
+await logger.flushAll(); // Flushes all transports including Discord singleton
 
 // Manual flush for specific scenarios
 await logger.flushAll();
@@ -519,19 +543,19 @@ The main logger object with comprehensive functionality.
 - `logger.setOptions(newOptions: LoggerOptions): void`: Merge new options with existing configuration
 - `logger.resetOptions(): void`: Reset all options to default values
 - `logger.child(childOptions?: ChildLoggerOptions): ChildLogger`: Create a child logger with inherited config
-- `logger.flushAll(): Promise<void>`: Flush all transports (essential for graceful shutdown)
+- `logger.flushAll(): Promise<void>`: Flush all transports including Discord (essential for graceful shutdown)
 
-**Logging Methods:** (all support structured data as second parameter)
-- `logger.fatal(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void`
-- `logger.error(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void`
-- `logger.warn(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void`
-- `logger.info(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void`
-- `logger.debug(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void`
-- `logger.trace(message: string, data?: Record<string, unknown> | unknown, ...args: unknown[]): void`
+**Logging Methods:** (all support structured data as first parameter when it's a plain object)
+- `logger.fatal(message: string, ...args: unknown[]): void`
+- `logger.error(message: string, ...args: unknown[]): void`
+- `logger.warn(message: string, ...args: unknown[]): void`
+- `logger.info(message: string, ...args: unknown[]): void`
+- `logger.debug(message: string, ...args: unknown[]): void`
+- `logger.trace(message: string, ...args: unknown[]): void`
 
 ### `ChildLogger`
 
-Child loggers inherit parent configuration and add their own context.
+Child loggers inherit parent configuration and merge their context with parent context.
 
 **Methods:**
 - All logging methods (`fatal`, `error`, `warn`, `info`, `debug`, `trace`)
@@ -571,17 +595,19 @@ export interface LoggerOptions {
   redaction?: RedactionConfig;
   /** Pluggable formatter instance */
   pluggableFormatter?: LogFormatter;
+  /** Discord webhook URL for sending logs with discord: true flag */
+  discordWebhookUrl?: string;
+  /** Context for this logger (merged with child logger contexts) */
+  context?: Record<string, unknown>;
 }
 ```
 
 ### `ChildLoggerOptions` Interface
 
 ```typescript
-export interface ChildLoggerOptions {
-  /** Default structured data to include in all log entries */
-  defaultData?: Record<string, unknown>;
-  /** Prefix to add to all log messages */
-  messagePrefix?: string;
+export interface ChildLoggerOptions extends Partial<LoggerOptions> {
+  /** Contextual data to include with every log entry from this child logger. */
+  context?: Record<string, unknown>;
 }
 ```
 
@@ -637,7 +663,7 @@ Accepts color values as hex, rgb, hsl, hsv, cmyk, or ANSI escape codes.
 ```typescript
 export interface Transport {
   log(entry: LogEntry, options: LoggerOptions): Promise<void>;
-  flush?(): Promise<void>; // Optional flush method for graceful shutdown
+  flush?(options?: LoggerOptions): Promise<void>; // Optional flush method for graceful shutdown
 }
 ```
 
@@ -683,7 +709,7 @@ const fileTransport = new FileTransport(filePath: string, rotationConfig?: LogRo
 - `rotationConfig`: Optional rotation configuration
 
 #### `DiscordWebhookTransport`
-Sends log entries to a Discord webhook URL with intelligent batching and rate limit handling.
+Sends log entries to a Discord webhook URL with intelligent batching and rate limit handling. Can be used directly as a transport or via the Discord webhook integration with `discord: true` flag.
 
 ```typescript
 const discordTransport = new DiscordWebhookTransport(
@@ -726,10 +752,12 @@ logger.setOptions({ pluggableFormatter: formatter });
 This library provides comprehensive TypeScript safety:
 
 - **Type Guards**: Proper handling of `unknown` types with runtime type checking
-- **Error Serialization**: Safe serialization of Error objects with configurable depth limiting for causes
+- **Error Serialization**: Safe serialization of Error objects with configurable depth limiting for causes (default 3 levels)
 - **Structured Data**: Type-safe structured logging support with proper Record types
 - **Unknown Arrays**: Log arguments use `unknown[]` instead of `any[]` for better type safety
 - **Null Safety**: Proper handling of null, undefined, and edge cases
+- **Circular Reference Detection**: Safe handling of objects with circular references using WeakSet
+- **Error-like Object Detection**: Type guards to distinguish between Error instances and error-like objects
 
 Example of type-safe usage:
 ```typescript
@@ -740,14 +768,18 @@ logger.info('User action', { userId: 123, action: 'login' });
 try {
   throw new Error('Something went wrong');
 } catch (error: unknown) {
-  logger.error('Operation failed', { error }); // Error is safely serialized
+  logger.error('Operation failed', { operation: 'test' }, error); // Error is safely serialized
 }
 
 // Type-safe child logger creation
 const typedChild = logger.child({
-  defaultData: { service: 'auth', version: '1.0.0' },
-  messagePrefix: '[AUTH-SERVICE]'
+  context: { service: 'auth', version: '1.0.0' }
 });
+
+// Circular reference handling
+const circular: any = { name: 'test' };
+circular.self = circular;
+logger.debug('Circular test', circular); // Safely handled
 ```
 
 ## Extending with Custom Transports and Formatters
