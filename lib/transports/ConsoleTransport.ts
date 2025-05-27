@@ -1,83 +1,7 @@
-import { toAnsiColor } from '../features/helpers';
-import { getRedactedEntry, type LogEntry } from '../features/redaction';
-
-/**
- * Defines the available log levels.
- */
-export enum LogLevel {
-  SILENT = 0, // No logs
-  FATAL = 1,  // Critical errors causing application termination
-  ERROR = 2,  // Errors that don't necessarily stop the application
-  WARN = 3,   // Warnings about potential issues
-  INFO = 4,   // General informational messages
-  DEBUG = 5,  // Detailed information for debugging
-  TRACE = 6,  // Most granular information, for tracing code execution
-}
-
-/**
- * Type for custom console color definitions.
- * Allows overriding specific log levels or properties like reset, bold, dim.
- * Accepts color values as hex, rgb, hsl, hsv, cmyk, or ANSI escape codes.
- */
-export type CustomConsoleColors = Partial<{
-  reset: string;
-  bold: string;
-  dim: string;
-  [LogLevel.FATAL]: string;
-  [LogLevel.ERROR]: string;
-  [LogLevel.WARN]: string;
-  [LogLevel.INFO]: string;
-  [LogLevel.DEBUG]: string;
-  [LogLevel.TRACE]: string;
-}>;
-
-/**
- * Interface for logger configuration options.
- */
-export interface LoggerOptions {
-  /** Minimum log level to process. Defaults to LogLevel.INFO. */
-  level?: LogLevel;
-  /** If true, timestamps will be human-readable. Defaults to false. */
-  useHumanReadableTime?: boolean;
-  /** Array of transports to use. Defaults to [new ConsoleTransport()]. */
-  transports?: Transport[];
-  /** Output format. Defaults to 'string'. If a custom `formatter` is provided, this may be ignored by the formatter. */
-  format?: 'string' | 'json';
-  /** Custom function to format a log entry into a string. If provided, this typically overrides the default string/JSON formatting of transports. */
-  formatter?: (entry: LogEntry) => string;
-  /** Custom console colors to override defaults. */
-  customConsoleColors?: CustomConsoleColors;
-  /** Configuration for sensitive data redaction */
-  redaction?: import('../features/redaction').RedactionConfig;
-  /** Pluggable formatter instance */
-  pluggableFormatter?: import('../features/formatters').LogFormatter;
-  /** Discord webhook URL for sending logs with discord: true flag */
-  discordWebhookUrl?: string;
-  /** Context for this logger */
-  context?: Record<string, unknown>;
-}
-
-/**
- * Interface for log transports.
- * Transports are responsible for writing log entries to a destination.
- */
-export interface Transport {
-  /**
-   * Logs an entry to the transport destination.
-   * @param entry - The log entry to write
-   * @param options - Logger options for formatting and configuration
-   */
-  log(
-    entry: LogEntry,
-    options: LoggerOptions
-  ): Promise<void>;
-
-  /**
-   * Flushes any pending log entries.
-   * Should be called before application shutdown.
-   */
-  flush?(options?: LoggerOptions): Promise<void>;
-}
+import { toAnsiColor } from '../utils/colors';
+import { getRedactedEntry } from '../redaction';
+import { LogLevel } from '../core/constants';
+import type { LogEntry, LoggerOptions, Transport } from '../core/types';
 
 /**
  * ANSI color codes for console output with fallbacks.
@@ -221,9 +145,9 @@ export class ConsoleTransport implements Transport {
     });
 
     if (safeArgs.length > 0) {
-        consoleMethod(logString, ...safeArgs);
+      consoleMethod(logString, ...safeArgs);
     } else {
-        consoleMethod(logString);
+      consoleMethod(logString);
     }
   }
 

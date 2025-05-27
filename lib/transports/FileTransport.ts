@@ -2,8 +2,9 @@ import type { BunFile } from 'bun';
 import { EOL as osEOL } from 'os';
 import { gzipSync } from 'bun';
 import { join, dirname, basename, extname } from 'path';
-import { getRedactedEntry, type LogEntry } from '../features/redaction';
-import { LogLevel, type LoggerOptions, type Transport } from './ConsoleTransport';
+import { getRedactedEntry } from '../redaction';
+import { LogLevel } from '../core/constants';
+import type { LogEntry, LoggerOptions, Transport } from '../core/types';
 
 /**
  * Configuration for log rotation.

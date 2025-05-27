@@ -1,31 +1,41 @@
 // Core logger
-export { logger, defaultOptions, type BaseLogger, type ChildLoggerOptions } from './logger';
-export { ChildLogger } from './logger';
+export { logger, defaultOptions } from './core/logger';
+export { ChildLogger } from './core/logger';
+export type { BaseLogger, ChildLoggerOptions } from './core/types';
 
 // Log levels and types
-export { LogLevel, type LoggerOptions, type CustomConsoleColors, type Transport } from './transports/ConsoleTransport';
-export type { LogEntry, RedactionConfig } from './features/redaction';
+export { LogLevel } from './core/constants';
+export type { LoggerOptions, CustomConsoleColors, Transport, LogEntry } from './core/types';
+export type { RedactionConfig } from './redaction/config';
 export type { LogRotationConfig } from './transports/FileTransport';
 
 // Transports
 export { ConsoleTransport } from './transports/ConsoleTransport';
 export { FileTransport } from './transports/FileTransport';
 export { DiscordWebhookTransport } from './transports/DiscordWebhookTransport';
+export { WebSocketTransport } from './transports/WebSocketTransport';
 
 // Formatters
-export { type LogFormatter, LogfmtFormatter, NdjsonFormatter } from './features/formatters';
+export type { LogFormatter } from './formatters/LogFormatter';
+export { LogfmtFormatter } from './formatters/LogfmtFormatter';
+export { NdjsonFormatter } from './formatters/NdjsonFormatter';
 
 // Helper functions
-export { isRecord, isErrorLike } from './features/typeGuards';
-export { getTimestamp, serializeError, processLogArgs, toAnsiColor } from './features/helpers';
+export { isRecord, isErrorLike } from './utils/typeGuards';
+export { getTimestamp, serializeError, processLogArgs } from './utils/serialization';
+export { toAnsiColor } from './utils/colors';
+
+// Re-export redaction functionality
 export { 
   shouldRedactKey, 
   shouldRedactValue, 
   redactString, 
   redactObject,
   getRedactedEntry,
-  needsRedaction 
-} from './features/redaction';
+  needsRedaction,
+  redactLogEntry,
+  isWhitelisted
+} from './redaction';
 
 // Add missing type exports that are in the .d.ts
 export type { InjectedBunFileOperations } from './transports/FileTransport';

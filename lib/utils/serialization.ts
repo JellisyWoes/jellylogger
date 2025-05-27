@@ -1,28 +1,6 @@
 import { isRecord, isErrorLike, isPrimitive, mightHaveCircularRefs } from './typeGuards';
 
-/**
- * Generates a timestamp string.
- * @param humanReadable - If true, returns a human-readable format (YYYY-MM-DD HH:MM:SS AM/PM).
- *                        Otherwise, returns an ISO string.
- * @returns The formatted timestamp string.
- */
-export const getTimestamp = (humanReadable: boolean = false): string => {
-  const now = new Date();
-  if (humanReadable) {
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    let hours = now.getHours();
-    const minutes = String(now.getMinutes()).padStart(2, "0");
-    const seconds = String(now.getSeconds()).padStart(2, "0");
-    const ampm = hours >= 12 ? "PM" : "AM";
-    hours = hours % 12 || 12;
-    const hoursStr = String(hours).padStart(2, "0");
-
-    return `${year}-${month}-${day} ${hoursStr}:${minutes}:${seconds} ${ampm}`;
-  }
-  return now.toISOString();
-};
+export { getTimestamp } from './time';
 
 /**
  * Serializes an error object with optional depth limiting for causes.
@@ -95,10 +73,12 @@ export function processLogArgs(args: unknown[]): unknown[] {
 
     // For non-null objects, check for circular references
     if (mightHaveCircularRefs(value)) {
-      if (seen.has(value)) {
-        return '[Circular Reference]';
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return '[Circular Reference]';
+        }
+        seen.add(value);
       }
-      seen.add(value);
     }
 
     // Handle built-in object types
@@ -144,11 +124,12 @@ export function processLogArgs(args: unknown[]): unknown[] {
     
     // Handle Error-like objects
     if (isErrorLike(value)) {
+      const v = value as { name?: unknown; message?: unknown; stack?: unknown; cause?: unknown };
       return {
-        name: String(value.name),
-        message: String(value.message),
-        stack: typeof value.stack === 'string' ? value.stack : undefined,
-        ...(value.cause !== undefined ? { cause: processValue(value.cause, depth + 1) } : {})
+        name: v.name !== undefined ? String(v.name) : undefined,
+        message: v.message !== undefined ? String(v.message) : undefined,
+        stack: typeof v.stack === 'string' ? v.stack : undefined,
+        ...(v.cause !== undefined ? { cause: processValue(v.cause, depth + 1) } : {})
       };
     }
     
@@ -200,21 +181,4 @@ export function processLogArgs(args: unknown[]): unknown[] {
       return `[Argument ${index}: Processing Failed]`;
     }
   });
-}
-
-// Helper to convert user color input to ANSI escape code using Bun.color with fallback
-export function toAnsiColor(color?: string, fallback: string = ""): string {
-  if (!color) return fallback;
-  // If already an ANSI escape code, just return
-  if (color.startsWith("\x1b[")) return color;
-  // Try to use Bun.color for hex, rgb, hsl, hsv, cmyk, etc.
-  try {
-    const result = Bun.color(color, "ansi");
-    if (result) return result;
-    console.warn(`Invalid color "${color}", using fallback`);
-    return fallback;
-  } catch (e) {
-    console.warn(`Failed to parse color "${color}": ${e instanceof Error ? e.message : String(e)}, using fallback`);
-    return fallback;
-  }
 }

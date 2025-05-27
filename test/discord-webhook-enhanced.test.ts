@@ -38,6 +38,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
       }) as unknown as typeof fetch);
 
       const transport = new DiscordWebhookTransport(WEBHOOK_URL, {
+        suppressConsoleErrors: true, // Suppress error logs in test
         batchIntervalMs: 100,
         maxRetries: 3
       });
@@ -67,6 +68,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
       }) as unknown as typeof fetch);
 
       const transport = new DiscordWebhookTransport(WEBHOOK_URL, {
+        suppressConsoleErrors: true, // Suppress error logs in test
         batchIntervalMs: 50,
         maxRetries: 2 // Lower for faster test
       });

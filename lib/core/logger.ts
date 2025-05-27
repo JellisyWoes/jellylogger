@@ -1,31 +1,10 @@
-import { ConsoleTransport, LogLevel, type LoggerOptions } from './transports/ConsoleTransport';
-import { DiscordWebhookTransport } from './transports/DiscordWebhookTransport';
-import { getTimestamp, processLogArgs } from './features/helpers';
-import { isRecord, isErrorLike } from './features/typeGuards';
-import type { LogEntry } from './features/redaction';
-
-/**
- * Options for creating a child logger.
- */
-export interface ChildLoggerOptions {
-  /** Prefix to add to all log messages from this child logger */
-  messagePrefix?: string;
-  /** Contextual data to include with every log entry from this child logger */
-  defaultData?: Record<string, unknown>;
-}
-
-/**
- * Base interface for logger methods.
- */
-export interface BaseLogger {
-  fatal(message: string, ...args: unknown[]): void;
-  error(message: string, ...args: unknown[]): void;
-  warn(message: string, ...args: unknown[]): void;
-  info(message: string, ...args: unknown[]): void;
-  debug(message: string, ...args: unknown[]): void;
-  trace(message: string, ...args: unknown[]): void;
-  child(childOptions?: ChildLoggerOptions): ChildLogger;
-}
+import { LogLevel } from './constants';
+import type { LoggerOptions, LogEntry, BaseLogger, ChildLoggerOptions } from './types';
+import { ConsoleTransport } from '../transports/ConsoleTransport';
+import { DiscordWebhookTransport } from '../transports/DiscordWebhookTransport';
+import { getTimestamp } from '../utils/time';
+import { processLogArgs as processArgsUtil } from '../utils/serialization';
+import { isRecord, isErrorLike } from '../utils/typeGuards';
 
 /**
  * ChildLogger class to create loggers with inherited configuration and specific context.
@@ -50,14 +29,14 @@ export class ChildLogger implements BaseLogger {
     }
 
     // If we have defaultData, we need to inject it into the arguments
-    if (this.options.defaultData) {
+    if (this.options.defaultData && Object.keys(this.options.defaultData).length > 0) {
       // Find if there's already a data object in the args that we can merge with
       let hasDataObject = false;
       const transformedArgs = args.map(arg => {
         if (isRecord(arg) && !isErrorLike(arg) && !hasDataObject) {
           hasDataObject = true;
           // Merge defaultData with existing data object (existing data takes precedence)
-          return { ...this.options.defaultData, ...arg };
+          return { ...this.options.defaultData!, ...arg };
         }
         return arg;
       });
@@ -67,77 +46,43 @@ export class ChildLogger implements BaseLogger {
         transformedArgs.unshift(this.options.defaultData);
       }
 
-      return [transformedMessage, ...transformedArgs];
+      return [transformedMessage, ...transformedArgs] as [string, ...unknown[]];
     }
 
     return [transformedMessage, ...args];
   }
 
-  /**
-   * Logs an entry at the FATAL level.
-   * @param message - The log message
-   * @param args - Additional arguments for the log entry
-   */
+  // ...existing logging methods...
   fatal(message: string, ...args: unknown[]): void {
     const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
     this.parent.fatal(transformedMessage, ...transformedArgs);
   }
 
-  /**
-   * Logs an entry at the ERROR level.
-   * @param message - The log message
-   * @param args - Additional arguments for the log entry
-   */
   error(message: string, ...args: unknown[]): void {
     const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
     this.parent.error(transformedMessage, ...transformedArgs);
   }
 
-  /**
-   * Logs an entry at the WARN level.
-   * @param message - The log message
-   * @param args - Additional arguments for the log entry
-   */
   warn(message: string, ...args: unknown[]): void {
     const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
     this.parent.warn(transformedMessage, ...transformedArgs);
   }
 
-  /**
-   * Logs an entry at the INFO level.
-   * @param message - The log message
-   * @param args - Additional arguments for the log entry
-   */
   info(message: string, ...args: unknown[]): void {
     const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
     this.parent.info(transformedMessage, ...transformedArgs);
   }
 
-  /**
-   * Logs an entry at the DEBUG level.
-   * @param message - The log message
-   * @param args - Additional arguments for the log entry
-   */
   debug(message: string, ...args: unknown[]): void {
     const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
     this.parent.debug(transformedMessage, ...transformedArgs);
   }
 
-  /**
-   * Logs an entry at the TRACE level.
-   * @param message - The log message
-   * @param args - Additional arguments for the log entry
-   */
   trace(message: string, ...args: unknown[]): void {
     const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
     this.parent.trace(transformedMessage, ...transformedArgs);
   }
 
-  /**
-   * Creates a child logger with inherited configuration and optional context.
-   * @param childOptions - Options for the child logger
-   * @returns A new child logger instance
-   */
   child(childOptions: ChildLoggerOptions = {}): ChildLogger {
     // Merge parent and child options
     const mergedOptions: ChildLoggerOptions = {};
@@ -156,7 +101,7 @@ export class ChildLogger implements BaseLogger {
       mergedOptions.defaultData = {
         ...(this.options.defaultData || {}),
         ...(childOptions.defaultData || {})
-      };
+      } as Record<string, unknown>;
     }
 
     return new ChildLogger(this.parent, mergedOptions);
@@ -185,20 +130,14 @@ export const logger: BaseLogger & {
 } = {
   options: { ...defaultOptions },
 
-  /**
-   * Updates logger configuration by merging with existing options.
-   * @param newOptions - New options to merge
-   */
   setOptions(newOptions: LoggerOptions): void {
     this.options = { ...this.options, ...newOptions };
-    // Ensure customConsoleColors is merged properly if provided partially
     if (newOptions.customConsoleColors) {
       this.options.customConsoleColors = {
         ...(this.options.customConsoleColors || {}),
         ...newOptions.customConsoleColors,
       };
     }
-    // Merge redaction config
     if (newOptions.redaction) {
       this.options.redaction = {
         ...(this.options.redaction || {}),
@@ -207,61 +146,45 @@ export const logger: BaseLogger & {
     }
   },
 
-  /**
-   * Resets logger options to defaults.
-   */
   resetOptions(): void {
     this.options = { ...defaultOptions };
   },
 
-  /**
-   * Internal logging method for backward compatibility.
-   * @param level - Log level
-   * @param message - Log message
-   * @param args - Additional arguments
-   */
   _log(level: LogLevel, message: string, ...args: unknown[]): void {
     this._logWithData(level, message, undefined, ...args);
   },
 
-  /**
-   * Internal logging method with structured data support and improved type safety.
-   */
   _logWithData(level: LogLevel, message: string, data?: Record<string, unknown>, ...args: unknown[]): void {
     const effectiveLevel = this.options.level ?? LogLevel.INFO;
     if (level > effectiveLevel || effectiveLevel === LogLevel.SILENT) {
       return;
     }
 
-    // Filter out undefined and null arguments before processing
     const nonNullArgs = args.filter(arg => arg !== undefined && arg !== null);
     
-    // Extract structured data from arguments and filter out non-data args
     let extractedData: Record<string, unknown> | undefined = data;
     const filteredArgs: unknown[] = [];
     
     for (const arg of nonNullArgs) {
       if (isRecord(arg) && !isErrorLike(arg)) {
-        // Merge with existing data if we have it
         if (extractedData) {
           extractedData = { ...extractedData, ...arg };
         } else {
-          extractedData = arg;
+          extractedData = arg as Record<string, unknown>;
         }
       } else {
         filteredArgs.push(arg);
       }
     }
 
-    const processedArgs = processLogArgs(filteredArgs);
+    const processedArgs = processArgsUtil(filteredArgs);
 
-    // Check for discord flag and create clean data without it
     let shouldSendToDiscord = false;
     let cleanData = extractedData;
     if (extractedData && isRecord(extractedData) && 'discord' in extractedData) {
       shouldSendToDiscord = Boolean(extractedData.discord);
       const { discord, ...restData } = extractedData;
-      cleanData = Object.keys(restData).length > 0 ? restData : undefined;
+      cleanData = Object.keys(restData).length > 0 ? restData as Record<string, unknown> : undefined;
     }
 
     let entry: LogEntry = {
@@ -273,7 +196,6 @@ export const logger: BaseLogger & {
       data: cleanData,
     };
 
-    // Send to regular transports (redaction is now handled per-transport)
     const transports = this.options.transports ?? [];
     for (const transport of transports) {
       try {
@@ -286,7 +208,6 @@ export const logger: BaseLogger & {
       }
     }
 
-    // Send to Discord using singleton transport if flag is set and webhook URL is configured
     if (shouldSendToDiscord && this.options.discordWebhookUrl) {
       try {
         const discordTransport = getDiscordTransport(this.options.discordWebhookUrl);
@@ -307,72 +228,34 @@ export const logger: BaseLogger & {
     }
   },
 
-  /**
-   * Log a fatal error message.
-   * @param message - The log message
-   * @param args - Additional arguments, including optional structured data objects
-   */
   fatal(message: string, ...args: unknown[]): void {
     this._logWithData(LogLevel.FATAL, message, undefined, ...args);
   },
 
-  /**
-   * Log an error message.
-   * @param message - The log message
-   * @param args - Additional arguments, including optional structured data objects
-   */
   error(message: string, ...args: unknown[]): void {
     this._logWithData(LogLevel.ERROR, message, undefined, ...args);
   },
 
-  /**
-   * Log a warning message.
-   * @param message - The log message
-   * @param args - Additional arguments, including optional structured data objects
-   */
   warn(message: string, ...args: unknown[]): void {
     this._logWithData(LogLevel.WARN, message, undefined, ...args);
   },
 
-  /**
-   * Log an info message.
-   * @param message - The log message
-   * @param args - Additional arguments, including optional structured data objects
-   */
   info(message: string, ...args: unknown[]): void {
     this._logWithData(LogLevel.INFO, message, undefined, ...args);
   },
 
-  /**
-   * Log a debug message.
-   * @param message - The log message
-   * @param args - Additional arguments, including optional structured data objects
-   */
   debug(message: string, ...args: unknown[]): void {
     this._logWithData(LogLevel.DEBUG, message, undefined, ...args);
   },
 
-  /**
-   * Log a trace message.
-   * @param message - The log message
-   * @param args - Additional arguments, including optional structured data objects
-   */
   trace(message: string, ...args: unknown[]): void {
     this._logWithData(LogLevel.TRACE, message, undefined, ...args);
   },
 
-  /**
-   * Creates a child logger with inherited configuration and optional context.
-   * @param childOptions - Options for the child logger
-   * @returns A new child logger instance
-   */
   child(childOptions: ChildLoggerOptions = {}): ChildLogger {
     return new ChildLogger(this, childOptions);
   },
 
-  /**
-   * Flushes all transports including singleton Discord transport.
-   */
   async flushAll(): Promise<void> {
     const flushPromises = (this.options.transports ?? [])
       .map(async (transport) => {
@@ -385,7 +268,6 @@ export const logger: BaseLogger & {
         }
       });
 
-    // Also flush singleton Discord transport if it exists
     if (globalDiscordTransport) {
       flushPromises.push(
         globalDiscordTransport.flush(this.options).catch(error => {

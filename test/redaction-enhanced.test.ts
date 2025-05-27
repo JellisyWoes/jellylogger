@@ -9,7 +9,7 @@ import {
   redactString,
   needsRedaction,
   redactObject,
-  getRedactedEntry
+  redactLogEntry
 } from "../lib/index";
 
 describe("Enhanced Redaction", () => {
@@ -135,21 +135,21 @@ describe("Enhanced Redaction", () => {
     });
   });
 
-  describe("Regex Pattern Matching", () => {
-    it("should redact keys using regex patterns", () => {
+  describe("Whitelist Support", () => {
+    it("should not redact whitelisted keys", () => {
       const consoleTransport = new ConsoleTransport();
       
       const entry: LogEntry = {
         timestamp: "2023-01-01T12:00:00.000Z",
         level: LogLevel.INFO,
         levelName: "INFO",
-        message: "Regex pattern test",
+        message: "Whitelist test",
         args: [],
         data: { 
-          apiKey1: "key1",
-          apiKey2: "key2",
-          publicData: "safe",
-          secretToken: "token123"
+          password: "secret1",
+          adminPassword: "secret2",
+          token: "token1",
+          publicToken: "token2"
         }
       };
       
@@ -157,174 +157,8 @@ describe("Enhanced Redaction", () => {
       
       consoleTransport.log(entry, {
         redaction: {
-          keyPatterns: [/^api/i, /secret/i],
-          replacement: "[REGEX_REDACTED]",
-          redactIn: "console"
-        },
-        format: "json"
-      });
-      
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
-      const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(loggedData.data.apiKey1).toBe("[REGEX_REDACTED]");
-      expect(loggedData.data.apiKey2).toBe("[REGEX_REDACTED]");
-      expect(loggedData.data.publicData).toBe("safe");
-      expect(loggedData.data.secretToken).toBe("[REGEX_REDACTED]");
-    });
-  });
-
-  describe("Value-Based Redaction", () => {
-    it("should redact values matching patterns regardless of keys", () => {
-      const consoleTransport = new ConsoleTransport();
-      
-      const entry: LogEntry = {
-        timestamp: "2023-01-01T12:00:00.000Z",
-        level: LogLevel.INFO,
-        levelName: "INFO",
-        message: "Value pattern test",
-        args: [],
-        data: { 
-          id: "user_12345",
-          token: "auth_67890",
-          name: "john",
-          email: "user@domain.com"
-        }
-      };
-      
-      consoleSpy.mockClear();
-      
-      consoleTransport.log(entry, {
-        redaction: {
-          valuePatterns: [/^user_/, /^auth_/],
-          replacement: "[VALUE_REDACTED]",
-          redactIn: "console"
-        },
-        format: "json"
-      });
-      
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
-      const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(loggedData.data.id).toBe("[VALUE_REDACTED]");
-      expect(loggedData.data.token).toBe("[VALUE_REDACTED]");
-      expect(loggedData.data.name).toBe("john");
-      expect(loggedData.data.email).toBe("user@domain.com");
-    });
-
-    it("should only redact string values for value patterns", () => {
-      const consoleTransport = new ConsoleTransport();
-      
-      const entry: LogEntry = {
-        timestamp: "2023-01-01T12:00:00.000Z",
-        level: LogLevel.INFO,
-        levelName: "INFO",
-        message: "Value type test",
-        args: [],
-        data: { 
-          stringValue: "secret_123",
-          numberValue: 123,
-          booleanValue: true,
-          objectValue: { nested: "secret_456" }
-        }
-      };
-      
-      consoleSpy.mockClear();
-      
-      consoleTransport.log(entry, {
-        redaction: {
-          valuePatterns: [/^secret_/],
-          replacement: "[SECRET_REDACTED]",
-          redactIn: "console"
-        },
-        format: "json"
-      });
-      
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
-      const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(loggedData.data.stringValue).toBe("[SECRET_REDACTED]");
-      expect(loggedData.data.numberValue).toBe(123);
-      expect(loggedData.data.booleanValue).toBe(true);
-      expect(loggedData.data.objectValue.nested).toBe("[SECRET_REDACTED]");
-    });
-  });
-
-  describe("String Redaction", () => {
-    it("should redact sensitive patterns in log messages", () => {
-      const consoleTransport = new ConsoleTransport();
-      
-      const entry: LogEntry = {
-        timestamp: "2023-01-01T12:00:00.000Z",
-        level: LogLevel.INFO,
-        levelName: "INFO",
-        message: "Processing credit card 4111-1111-1111-1111 for user",
-        args: [],
-        data: {}
-      };
-      
-      consoleSpy.mockClear();
-      
-      consoleTransport.log(entry, {
-        redaction: {
-          redactStrings: true,
-          stringPatterns: [/\d{4}-\d{4}-\d{4}-\d{4}/g],
-          replacement: "[CARD_REDACTED]",
-          redactIn: "console"
-        },
-        format: "json"
-      });
-      
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
-      const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(loggedData.message).toBe("Processing credit card [CARD_REDACTED] for user");
-    });
-
-    it("should redact sensitive patterns in string arguments", () => {
-      const consoleTransport = new ConsoleTransport();
-      
-      const entry: LogEntry = {
-        timestamp: "2023-01-01T12:00:00.000Z",
-        level: LogLevel.INFO,
-        levelName: "INFO",
-        message: "User authentication",
-        args: ["SSN: 123-45-6789", "Phone: 555-123-4567"],
-        data: {}
-      };
-      
-      consoleSpy.mockClear();
-      
-      consoleTransport.log(entry, {
-        redaction: {
-          redactStrings: true,
-          stringPatterns: [/\d{3}-\d{2}-\d{4}/g, /\d{3}-\d{3}-\d{4}/g],
-          replacement: "[PII_REDACTED]",
-          redactIn: "console"
-        },
-        format: "json"
-      });
-      
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
-      const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(loggedData.args[0]).toBe("SSN: [PII_REDACTED]");
-      expect(loggedData.args[1]).toBe("Phone: [PII_REDACTED]");
-    });
-
-    it("should not redact strings when redactStrings is false", () => {
-      const consoleTransport = new ConsoleTransport();
-      
-      const entry: LogEntry = {
-        timestamp: "2023-01-01T12:00:00.000Z",
-        level: LogLevel.INFO,
-        levelName: "INFO",
-        message: "Credit card 4111-1111-1111-1111 processed",
-        args: [],
-        data: {}
-      };
-      
-      consoleSpy.mockClear();
-      
-      consoleTransport.log(entry, {
-        redaction: {
-          redactStrings: false,
-          stringPatterns: [/\d{4}-\d{4}-\d{4}-\d{4}/g],
+          keys: ["*password", "*token"],
+          whitelist: ["adminPassword", "publicToken"],
           replacement: "[REDACTED]",
           redactIn: "console"
         },
@@ -333,19 +167,57 @@ describe("Enhanced Redaction", () => {
       
       expect(consoleSpy).toHaveBeenCalledTimes(1);
       const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(loggedData.message).toBe("Credit card 4111-1111-1111-1111 processed");
+      expect(loggedData.data.password).toBe("[REDACTED]");
+      expect(loggedData.data.adminPassword).toBe("secret2"); // Whitelisted
+      expect(loggedData.data.token).toBe("[REDACTED]");
+      expect(loggedData.data.publicToken).toBe("token2"); // Whitelisted
     });
-  });
 
-  describe("Function-Based Replacement", () => {
-    it("should use function replacement for custom redaction", () => {
+    it("should support regex whitelist patterns", () => {
       const consoleTransport = new ConsoleTransport();
       
       const entry: LogEntry = {
         timestamp: "2023-01-01T12:00:00.000Z",
         level: LogLevel.INFO,
         levelName: "INFO",
-        message: "Function replacement test",
+        message: "Regex whitelist test",
+        args: [],
+        data: { 
+          password: "secret1",
+          publicPassword: "secret2",
+          token: "token1"
+        }
+      };
+      
+      consoleSpy.mockClear();
+      
+      consoleTransport.log(entry, {
+        redaction: {
+          keys: ["password", "token"],
+          whitelistPatterns: [/^public/],
+          replacement: "[REDACTED]",
+          redactIn: "console"
+        },
+        format: "json"
+      });
+      
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
+      expect(loggedData.data.password).toBe("[REDACTED]");
+      expect(loggedData.data.publicPassword).toBe("secret2"); // Matches whitelist pattern
+      expect(loggedData.data.token).toBe("[REDACTED]");
+    });
+  });
+
+  describe("Custom Redactors", () => {
+    it("should use custom redactor function", () => {
+      const consoleTransport = new ConsoleTransport();
+      
+      const entry: LogEntry = {
+        timestamp: "2023-01-01T12:00:00.000Z",
+        level: LogLevel.INFO,
+        levelName: "INFO",
+        message: "Custom redactor test",
         args: [],
         data: { 
           password: "secret123",
@@ -357,8 +229,15 @@ describe("Enhanced Redaction", () => {
       
       consoleTransport.log(entry, {
         redaction: {
-          keys: ["password", "apiKey"],
-          replacement: (value, key, path) => `[${key.toUpperCase()}_HIDDEN]`,
+          customRedactor: (value, context) => {
+            if (context.key === 'password') {
+              return '[CUSTOM_PASSWORD]';
+            }
+            if (context.key === 'apiKey') {
+              return `[CUSTOM_${String(value).toUpperCase()}]`;
+            }
+            return value;
+          },
           redactIn: "console"
         },
         format: "json"
@@ -366,25 +245,22 @@ describe("Enhanced Redaction", () => {
       
       expect(consoleSpy).toHaveBeenCalledTimes(1);
       const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(loggedData.data.password).toBe("[PASSWORD_HIDDEN]");
-      expect(loggedData.data.apiKey).toBe("[APIKEY_HIDDEN]");
+      expect(loggedData.data.password).toBe("[CUSTOM_PASSWORD]");
+      expect(loggedData.data.apiKey).toBe("[CUSTOM_KEY456]");
     });
 
-    it("should provide correct path information to replacement function", () => {
+    it("should use field-specific custom redactors", () => {
       const consoleTransport = new ConsoleTransport();
       
       const entry: LogEntry = {
         timestamp: "2023-01-01T12:00:00.000Z",
         level: LogLevel.INFO,
         levelName: "INFO",
-        message: "Path information test",
+        message: "Field config test",
         args: [],
         data: { 
-          user: { 
-            credentials: { 
-              password: "secret" 
-            } 
-          }
+          password: "secret123",
+          token: "abc456"
         }
       };
       
@@ -392,8 +268,14 @@ describe("Enhanced Redaction", () => {
       
       consoleTransport.log(entry, {
         redaction: {
-          keys: ["password"],
-          replacement: (value, key, path) => `[REDACTED@${path}]`,
+          fieldConfigs: {
+            'password': {
+              customRedactor: (value, context) => `[FIELD_PWD_${context.key}]`
+            },
+            'token': {
+              replacement: '[FIELD_TOKEN]'
+            }
+          },
           redactIn: "console"
         },
         format: "json"
@@ -401,41 +283,52 @@ describe("Enhanced Redaction", () => {
       
       expect(consoleSpy).toHaveBeenCalledTimes(1);
       const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(loggedData.data.user.credentials.password).toBe("[REDACTED@user.credentials.password]");
+      expect(loggedData.data.password).toBe("[FIELD_PWD_password]");
+      expect(loggedData.data.token).toBe("[FIELD_TOKEN]");
     });
   });
 
-  describe("Performance Optimization", () => {
-    it("should avoid cloning when no redaction is needed", () => {
-      const entry: LogEntry = {
-        timestamp: "2023-01-01T12:00:00.000Z",
-        level: LogLevel.INFO,
-        levelName: "INFO",
-        message: "No redaction needed",
-        args: [],
-        data: { safe: "data", public: "info" }
+  describe("Enhanced Audit System", () => {
+    it("should trigger custom audit hooks", () => {
+      const auditEvents: any[] = [];
+      const auditHook = (event: any) => {
+        auditEvents.push(event);
       };
-      
-      const result = getRedactedEntry(entry, {
-        keys: ["password", "secret"],
-        redactIn: "console"
-      }, "console");
-      
-      // Should return the same object reference when no redaction is needed
-      expect(result).toBe(entry);
-    });
 
-    it("should use needsRedaction to check before processing", () => {
       const config = {
         keys: ["password"],
-        valuePatterns: [/^secret_/]
+        replacement: "[AUDITED]",
+        auditHook
       };
 
-      const safeData = { name: "john", id: "123" };
-      const unsafeData = { name: "john", password: "secret" };
+      const input = { password: "secret" };
+      redactObject(input, config, { key: '', path: '', field: '' });
+
+      expect(auditEvents).toHaveLength(1);
+      expect(auditEvents[0].type).toBe("key");
+      expect(auditEvents[0].context.key).toBe("password");
+      expect(auditEvents[0].before).toBe("secret");
+      expect(auditEvents[0].after).toBe("[AUDITED]");
+    });
+
+    it("should handle audit hook errors gracefully", () => {
+      const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
       
-      expect(needsRedaction(safeData, config)).toBe(false);
-      expect(needsRedaction(unsafeData, config)).toBe(true);
+      const config = {
+        keys: ["password"],
+        replacement: "[AUDITED]",
+        auditHook: () => {
+          throw new Error("Audit error");
+        }
+      };
+
+      const input = { password: "secret" };
+      
+      // Should not throw
+      expect(() => redactObject(input, config, { key: '', path: '', field: '' })).not.toThrow();
+      expect(warnSpy).toHaveBeenCalledWith('[REDACTION AUDIT] Error in audit hook:', expect.any(Error));
+      
+      warnSpy.mockRestore();
     });
   });
 
@@ -450,10 +343,11 @@ describe("Enhanced Redaction", () => {
       };
 
       const input = { password: "secret" };
-      redactObject(input, config, '', new WeakSet());
+      redactObject(input, config, { key: '', path: '', field: '' });
 
       expect(debugSpy).toHaveBeenCalledWith(
-        "[REDACTION AUDIT] Redacted key: password at path: password"
+        expect.stringContaining("[REDACTION AUDIT]"),
+        expect.any(Object)
       );
       
       debugSpy.mockRestore();
@@ -469,7 +363,7 @@ describe("Enhanced Redaction", () => {
       };
 
       const input = { password: "secret" };
-      redactObject(input, config, '', new WeakSet());
+      redactObject(input, config, { key: '', path: '', field: '' });
 
       expect(debugSpy).not.toHaveBeenCalled();
       
@@ -486,7 +380,7 @@ describe("Enhanced Redaction", () => {
       };
 
       const input = { password: "secret" };
-      redactObject(input, config, '', new WeakSet());
+      redactObject(input, config, { key: '', path: '', field: '' });
 
       expect(debugSpy).not.toHaveBeenCalled();
       
@@ -530,6 +424,68 @@ describe("Enhanced Redaction", () => {
       const input = "Card number 4111-1111-1111-1111 is valid";
       const result = redactString(input, config);
       expect(result).toBe("Card number [CARD] is valid");
+    });
+
+    it("redactString should work with enhanced context", () => {
+      const config = {
+        redactStrings: true,
+        stringPatterns: [/\d{4}-\d{4}-\d{4}-\d{4}/g],
+        replacement: (value: any, context: any) => `[CARD_${context.field}]`
+      };
+
+      const context = { key: '', path: 'message', field: 'message', originalValue: '' };
+      const input = "Card number 4111-1111-1111-1111 is valid";
+      const result = redactString(input, config, context);
+      expect(result).toBe("Card number [CARD_message] is valid");
+    });
+
+    it("redactLogEntry should be the unified API", () => {
+      const entry: LogEntry = {
+        timestamp: "2023-01-01T12:00:00.000Z",
+        level: LogLevel.INFO,
+        levelName: "INFO",
+        message: "Test unified API",
+        args: [],
+        data: { 
+          password: "secret",
+          custom: "data"
+        }
+      };
+
+      const config = {
+        fields: ['data'],
+        keys: ["password"],
+        replacement: "[UNIFIED_REDACTED]"
+      };
+
+      const result = redactLogEntry(entry, config);
+      
+      expect(result.data!.password).toBe("[UNIFIED_REDACTED]");
+      expect(result.data!.custom).toBe("data");
+    });
+
+    it("should target specific fields for redaction", () => {
+      const entry: LogEntry = {
+        timestamp: "2023-01-01T12:00:00.000Z",
+        level: LogLevel.INFO,
+        levelName: "INFO",
+        message: "Test field targeting",
+        args: [{ password: "arg_secret" }],
+        data: { password: "data_secret" },
+        custom: { password: "custom_secret" }
+      } as any;
+
+      const config = {
+        fields: ['data'], // Only target data field
+        keys: ["password"],
+        replacement: "[FIELD_REDACTED]"
+      };
+
+      const result = redactLogEntry(entry, config);
+      
+      expect(result.data!.password).toBe("[FIELD_REDACTED]");
+      expect((result.args![0] as any).password).toBe("arg_secret"); // Not targeted
+      expect((result as any).custom.password).toBe("custom_secret"); // Not targeted
     });
 
     it("redactObject should handle complex nested structures", () => {

@@ -331,7 +331,9 @@ describe("Redaction", () => {
       redactString, 
       needsRedaction,
       redactObject,
-      getRedactedEntry 
+      getRedactedEntry,
+      redactLogEntry,
+      isWhitelisted
     } = require("../lib/index");
     
     expect(typeof shouldRedactKey).toBe("function");
@@ -340,6 +342,8 @@ describe("Redaction", () => {
     expect(typeof needsRedaction).toBe("function");
     expect(typeof redactObject).toBe("function");
     expect(typeof getRedactedEntry).toBe("function");
+    expect(typeof redactLogEntry).toBe("function");
+    expect(typeof isWhitelisted).toBe("function");
   });
 
   // Add test for backward compatibility
@@ -375,5 +379,164 @@ describe("Redaction", () => {
     expect(loggedData.data.password).toBe("[LEGACY_REDACTED]");
     expect(loggedData.data.token).toBe("[LEGACY_REDACTED]");
     expect(loggedData.data.safe).toBe("ok");
+  });
+
+  it("should use enhanced redaction context in replacement functions", () => {
+    const consoleTransport = new ConsoleTransport();
+    
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.INFO,
+      levelName: "INFO",
+      message: "Context replacement test",
+      args: [],
+      data: { 
+        password: "secret123",
+        user: {
+          token: "abc456"
+        }
+      }
+    };
+    
+    consoleSpy.mockClear();
+    
+    consoleTransport.log(entry, {
+      redaction: {
+        keys: ["password", "token"],
+        replacement: (value, context) => `[${context.key.toUpperCase()}_AT_${context.path}]`,
+        redactIn: "console"
+      },
+      format: "json"
+    });
+    
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(loggedData.data.password).toBe("[PASSWORD_AT_password]");
+    expect(loggedData.data.user.token).toBe("[TOKEN_AT_user.token]");
+  });
+
+  it("should respect field targeting configuration", () => {
+    const consoleTransport = new ConsoleTransport();
+    
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.INFO,
+      levelName: "INFO",
+      message: "Password in message: secret123",
+      args: ["Password in args: secret456"],
+      data: { 
+        password: "secret789"
+      }
+    };
+    
+    consoleSpy.mockClear();
+    
+    consoleTransport.log(entry, {
+      redaction: {
+        fields: ['data'], // Only redact data field
+        keys: ["password"],
+        redactStrings: true,
+        stringPatterns: [/secret\d+/g],
+        replacement: "[TARGETED_REDACTED]",
+        redactIn: "console"
+      },
+      format: "json"
+    });
+    
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
+    
+    // Only data should be redacted, message and args should remain unchanged
+    expect(loggedData.message).toBe("Password in message: secret123");
+    expect(loggedData.args[0]).toBe("Password in args: secret456");
+    expect(loggedData.data.password).toBe("[TARGETED_REDACTED]");
+  });
+
+  it("should handle field-specific configurations", () => {
+    const consoleTransport = new ConsoleTransport();
+    
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.INFO,
+      levelName: "INFO",
+      message: "Field config test",
+      args: [],
+      data: { 
+        password: "secret123",
+        token: "abc456",
+        safe: "data"
+      }
+    };
+    
+    consoleSpy.mockClear();
+    
+    consoleTransport.log(entry, {
+      redaction: {
+        keys: ["password", "token", "safe"], // Target all keys
+        fieldConfigs: {
+          'safe': {
+            disabled: true // Disable redaction for 'safe' field
+          },
+          'password': {
+            replacement: '[FIELD_SPECIFIC_PWD]'
+          }
+        },
+        replacement: "[DEFAULT_REDACTED]",
+        redactIn: "console"
+      },
+      format: "json"
+    });
+    
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(loggedData.data.password).toBe("[FIELD_SPECIFIC_PWD]");
+    expect(loggedData.data.token).toBe("[DEFAULT_REDACTED]");
+    expect(loggedData.data.safe).toBe("data"); // Not redacted due to field config
+  });
+
+  it("should respect maxDepth configuration", () => {
+    const consoleTransport = new ConsoleTransport();
+    
+    // Create deeply nested object
+    const deepData: any = {};
+    let current = deepData;
+    for (let i = 0; i < 15; i++) {
+      current.nested = { level: i };
+      current = current.nested;
+    }
+    current.password = "deep_secret";
+    
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.INFO,
+      levelName: "INFO",
+      message: "Max depth test",
+      args: [],
+      data: deepData
+    };
+    
+    consoleSpy.mockClear();
+    
+    consoleTransport.log(entry, {
+      redaction: {
+        keys: ["password"],
+        maxDepth: 5,
+        replacement: "[REDACTED]",
+        redactIn: "console"
+      },
+      format: "json"
+    });
+    
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const loggedData = JSON.parse(consoleSpy.mock.calls[0][0]);
+    
+    // Should hit max depth and truncate
+    let current_result = loggedData.data;
+    for (let i = 0; i < 5; i++) {
+      expect(current_result.nested).toBeDefined();
+      current_result = current_result.nested;
+    }
+    // At depth 5, should see the max depth message
+    expect(current_result).toBe("[Max Depth Exceeded]");
   });
 });

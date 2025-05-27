@@ -1,5 +1,6 @@
-import { getRedactedEntry, type LogEntry } from '../features/redaction';
-import { LogLevel, type LoggerOptions, type Transport } from './ConsoleTransport';
+import { getRedactedEntry } from '../redaction';
+import { LogLevel } from '../core/constants';
+import type { LogEntry, LoggerOptions, Transport } from '../core/types';
 
 /**
  * Options for DiscordWebhookTransport batching.

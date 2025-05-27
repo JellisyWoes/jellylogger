@@ -1,16 +1,5 @@
-import type { LogEntry } from './redaction';
-
-/**
- * Interface for pluggable formatters.
- */
-export interface LogFormatter {
-  /**
-   * Format a log entry into a string.
-   * @param entry - The log entry to format
-   * @returns Formatted log string
-   */
-  format(entry: LogEntry): string;
-}
+import type { LogEntry } from '../core/types';
+import type { LogFormatter } from './LogFormatter';
 
 /**
  * Built-in logfmt formatter.
@@ -38,20 +27,5 @@ export class LogfmtFormatter implements LogFormatter {
     }
 
     return pairs.join(' ');
-  }
-}
-
-/**
- * Built-in NDJSON (newline-delimited JSON) formatter.
- */
-export class NdjsonFormatter implements LogFormatter {
-  format(entry: LogEntry): string {
-    return JSON.stringify({
-      timestamp: entry.timestamp,
-      level: entry.levelName.toLowerCase(),
-      message: entry.message,
-      ...entry.data,
-      ...(entry.args.length > 0 ? { args: entry.args } : {}),
-    });
   }
 }
