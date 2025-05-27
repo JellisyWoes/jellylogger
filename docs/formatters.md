@@ -32,7 +32,7 @@ logger.setOptions({
   pluggableFormatter: new LogfmtFormatter()
 });
 
-logger.info({ userId: 123, action: 'login' }, 'User logged in');
+logger.info('User logged in', { userId: 123, action: 'login' });
 // Output: ts=2024-01-15T10:30:00.000Z level=info msg="User logged in" userId="123" action="login"
 ```
 
@@ -55,7 +55,7 @@ logger.setOptions({
   pluggableFormatter: new NdjsonFormatter()
 });
 
-logger.info({ userId: 123, action: 'login' }, 'User logged in');
+logger.info('User logged in', { userId: 123, action: 'login' });
 // Output: {"timestamp":"2024-01-15T10:30:00.000Z","level":"info","message":"User logged in","userId":123,"action":"login"}
 ```
 
@@ -319,6 +319,17 @@ class EfficientFormatter implements LogFormatter {
     
     // Fast path for common cases
     return `${entry.timestamp} ${entry.message}`;
+  }
+  
+  private expensiveFormat(entry: LogEntry): string {
+    // More detailed formatting for important logs
+    return JSON.stringify({
+      timestamp: entry.timestamp,
+      level: entry.levelName,
+      message: entry.message,
+      data: entry.data,
+      args: entry.args
+    }, null, 2);
   }
 }
 ```

@@ -1,6 +1,6 @@
 # jellylogger
 
-`jellylogger` is a flexible and easy-to-use logging library for Bun applications, written in TypeScript. It provides colorized console output, file logging with rotation, Discord webhook integration, structured logging, child loggers, sensitive data redaction, and supports custom transports with full async support.
+`jellylogger` is a flexible and easy-to-use logging library for Bun applications, written in TypeScript. It provides colorized console output, file logging with rotation, Discord webhook integration, WebSocket streaming, structured logging, child loggers, comprehensive sensitive data redaction, and supports custom transports with full async support.
 
 ## Table of Contents
 
@@ -24,10 +24,16 @@
       - [Log Rotation by Size](#log-rotation-by-size)
       - [Log Rotation by Date](#log-rotation-by-date)
       - [Combined Rotation Settings](#combined-rotation-settings)
+    - [Using WebSocketTransport](#using-websockettransport)
     - [Using Pluggable Formatters](#using-pluggable-formatters)
       - [Built-in Formatters](#built-in-formatters)
       - [Custom Formatters](#custom-formatters)
-    - [Sensitive Data Redaction](#sensitive-data-redaction)
+    - [Advanced Sensitive Data Redaction](#advanced-sensitive-data-redaction)
+      - [Basic Redaction](#basic-redaction)
+      - [Pattern-Based Redaction](#pattern-based-redaction)
+      - [Field-Specific Configuration](#field-specific-configuration)
+      - [Custom Redaction Functions](#custom-redaction-functions)
+      - [Redaction Auditing](#redaction-auditing)
     - [Using Multiple Transports](#using-multiple-transports)
     - [Error Handling and Serialization](#error-handling-and-serialization)
     - [Graceful Shutdown](#graceful-shutdown)
@@ -47,6 +53,7 @@
       - [`ConsoleTransport`](#consoletransport)
       - [`FileTransport`](#filetransport)
       - [`DiscordWebhookTransport`](#discordwebhooktransport)
+      - [`WebSocketTransport`](#websockettransport)
     - [Built-in Formatters](#built-in-formatters-1)
       - [`LogfmtFormatter`](#logfmtformatter)
       - [`NdjsonFormatter`](#ndjsonformatter)
@@ -60,15 +67,16 @@
 
 - **Multiple log levels**: `SILENT`, `FATAL`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE` with color-coded console output
 - **Structured logging**: Pass objects as structured data alongside messages with full type safety
-- **Child loggers**: Create contextualized loggers with inherited configuration and automatic context merging
+- **Child loggers**: Create contextualized loggers with inherited configuration, message prefixes, and default data
 - **Enhanced console output**: Customizable colors using Bun's color API (hex, rgb, hsl, hsv, cmyk, ANSI)
 - **File transport**: Write logs to files with comprehensive rotation, compression, and cleanup capabilities
 - **Discord webhook transport**: Send logs to Discord channels with intelligent batching, rate limit handling, and per-log control
+- **WebSocket transport**: Stream logs to WebSocket servers in real-time with automatic reconnection
 - **Async transport support**: Full Promise-based architecture with proper error handling and graceful degradation
 - **Graceful shutdown**: `flushAll()` method ensures all logs are written before application exit
 - **Flexible formatting**: Support for string, JSON, logfmt, NDJSON, and custom formats
 - **Pluggable formatters**: Built-in and custom formatter support with clean interfaces
-- **Sensitive data redaction**: Configurable redaction of sensitive keys in structured data and arguments
+- **Advanced sensitive data redaction**: Comprehensive redaction with pattern matching, custom functions, field-specific configs, and audit capabilities
 - **Circular reference handling**: Safe serialization of objects with circular references
 - **Enhanced TypeScript safety**: Proper handling of `unknown` types, Error serialization, and type guards
 - **Error serialization**: Deep serialization of Error objects including nested causes
@@ -99,6 +107,7 @@ import {
   FileTransport, 
   ConsoleTransport, 
   DiscordWebhookTransport,
+  WebSocketTransport,
   LogfmtFormatter,
   NdjsonFormatter,
   type LoggerOptions 
@@ -146,30 +155,33 @@ try {
 ```
 
 ### Child Loggers
-Create child loggers with inherited configuration and automatic context merging:
+Create child loggers with inherited configuration, message prefixes, and default data:
 ```typescript
-// Create a child logger with context
-const userLogger = logger.child({ 
-  context: { userId: 123, service: 'auth' }
+// Create a child logger with message prefix
+const apiLogger = logger.child({ 
+  messagePrefix: '[API]',
+  defaultData: { service: 'api', version: '1.0.0' }
 });
 
-userLogger.info('User action completed', { action: 'login' }); 
-// Output includes both userId, service, and action
+apiLogger.info('Server started'); 
+// Output: "[API] Server started" with service and version in data
 
-// Chain child loggers for nested contexts
-const requestLogger = userLogger.child({ 
-  context: { requestId: 'abc-123', endpoint: '/api/users' } 
+// Create nested child loggers
+const userApiLogger = apiLogger.child({ 
+  messagePrefix: '[USERS]',
+  defaultData: { module: 'users' } 
 });
 
-requestLogger.debug('Processing step 1', { step: 'validation' }); 
-// Context includes: userId, service, requestId, endpoint, and step
+userApiLogger.debug('Processing user request', { userId: 123 }); 
+// Output: "[API] [USERS] Processing user request"
+// Data includes: service, version, module, and userId
 
 // Child loggers inherit all parent configuration
-const operationLogger = requestLogger.child({
-  context: { operationId: 'op-456' }
+const requestLogger = userApiLogger.child({
+  defaultData: { requestId: 'req-456' }
 });
 
-operationLogger.trace('Detailed operation step');
+requestLogger.trace('Validating input');
 // All context is automatically merged and included
 ```
 
@@ -376,6 +388,25 @@ const fileTransport = new FileTransport('./combined.log', {
 // Will rotate when either size limit is reached OR daily rotation occurs
 ```
 
+### Using WebSocketTransport
+Stream logs to a WebSocket server in real-time:
+```typescript
+const wsTransport = new WebSocketTransport('ws://localhost:8080/logs', {
+  reconnectIntervalMs: 1000,      // Initial reconnect delay
+  maxReconnectIntervalMs: 30000,  // Maximum reconnect delay
+  redact: true,                   // Apply redaction for this transport
+  serializer: JSON.stringify      // Custom serialization function
+});
+
+logger.setOptions({
+  transports: [wsTransport],
+  level: LogLevel.DEBUG
+});
+
+logger.info('This will be streamed to the WebSocket server');
+logger.error('Errors are also streamed', { errorCode: 'WS_001' });
+```
+
 ### Using Pluggable Formatters
 
 #### Built-in Formatters
@@ -414,8 +445,9 @@ logger.setOptions({
 });
 ```
 
-### Sensitive Data Redaction
-Automatically redact sensitive information from logs:
+### Advanced Sensitive Data Redaction
+
+#### Basic Redaction
 ```typescript
 logger.setOptions({
   redaction: {
@@ -432,16 +464,112 @@ logger.info('User login attempt', {
   password: 'hunter2',      // Will be redacted
   apiKey: 'secret-key-123'  // Will be redacted
 });
+```
 
-// Sensitive data in arguments
-logger.debug('Auth token received', { token: 'abc123' }); // Will be redacted
+#### Pattern-Based Redaction
+```typescript
+logger.setOptions({
+  redaction: {
+    // Wildcard patterns for keys
+    keys: ['*.password', 'user.*secret*', '**token**'],
+    
+    // Regular expressions for key matching
+    keyPatterns: [
+      /^(api|auth)_key$/i,
+      /password/i
+    ],
+    
+    // Regular expressions for value matching (e.g., credit card numbers)
+    valuePatterns: [
+      /\b4[0-9]{12}(?:[0-9]{3})?\b/, // Visa credit cards
+      /\b\d{3}-\d{2}-\d{4}\b/       // SSN pattern
+    ],
+    
+    // String pattern redaction in messages
+    redactStrings: true,
+    stringPatterns: [
+      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g // Email addresses
+    ],
+    
+    // Whitelist to protect certain keys from redaction
+    whitelist: ['user.id', 'user.name', 'public*'],
+    whitelistPatterns: [/^public_/i]
+  }
+});
+```
 
-// Nested object redaction
-logger.info('Payment processed', {
-  user: { id: 123, name: 'Alice' },
-  payment: { 
-    amount: 100,
-    creditCard: '4111-1111-1111-1111' // Will be redacted
+#### Field-Specific Configuration
+```typescript
+logger.setOptions({
+  redaction: {
+    keys: ['secret'],
+    
+    // Field-specific configurations
+    fieldConfigs: {
+      'user.credentials.password': {
+        replacement: '[PASSWORD_HIDDEN]',
+        disabled: false
+      },
+      'debug.*': {
+        disabled: true  // Never redact debug fields
+      },
+      'audit.sensitive': {
+        customRedactor: (value, context) => {
+          return `[AUDIT_${typeof value}_${context.path}]`;
+        }
+      }
+    }
+  }
+});
+```
+
+#### Custom Redaction Functions
+```typescript
+logger.setOptions({
+  redaction: {
+    keys: ['sensitive'],
+    
+    // Global custom redactor
+    customRedactor: (value, context) => {
+      if (context.path.includes('password')) {
+        return '[CUSTOM_PASSWORD_REDACTION]';
+      }
+      if (typeof value === 'string' && value.length > 10) {
+        return value.substring(0, 3) + '***' + value.substring(value.length - 3);
+      }
+      return value;
+    },
+    
+    // Function-based replacement
+    replacement: (value, context) => {
+      return `[REDACTED_${context.field}_${typeof value}]`;
+    }
+  }
+});
+```
+
+#### Redaction Auditing
+```typescript
+logger.setOptions({
+  redaction: {
+    keys: ['password', 'token'],
+    
+    // Enable audit logging
+    auditRedaction: true,
+    
+    // Custom audit hook
+    auditHook: (event) => {
+      console.log(`[AUDIT] ${event.type} redaction at ${event.context.path}:`, {
+        before: event.before,
+        after: event.after,
+        rule: event.rule,
+        timestamp: event.timestamp
+      });
+    },
+    
+    // Additional redaction options
+    deepClone: true,    // Clone objects before redaction
+    maxDepth: 10        // Maximum recursion depth
   }
 });
 ```
@@ -455,9 +583,10 @@ const fileTransport = new FileTransport('./app.log', {
   maxFiles: 10,
   compress: true
 });
+const wsTransport = new WebSocketTransport('ws://localhost:8080/logs');
 
 logger.setOptions({
-  transports: [consoleTransport, fileTransport],
+  transports: [consoleTransport, fileTransport, wsTransport],
   level: LogLevel.DEBUG,
   discordWebhookUrl: 'https://discord.com/api/webhooks/your-webhook-url',
   redaction: {
@@ -466,10 +595,10 @@ logger.setOptions({
   }
 });
 
-// Regular log (console + file)
+// Regular log (console + file + WebSocket)
 logger.info('Application started', { version: '1.0.0', env: 'production' });
 
-// Critical log (console + file + Discord)
+// Critical log (console + file + WebSocket + Discord)
 logger.error('Database connection failed', {
   discord: true,
   error: 'Connection timeout',
@@ -514,7 +643,7 @@ logger.info('Circular reference test', circular); // Safely serialized as [Circu
 ### Graceful Shutdown
 Ensure all logs are written before application shutdown:
 ```typescript
-// Single flush call handles all transports including Discord
+// Single flush call handles all transports including Discord and WebSocket
 process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
   await logger.flushAll();
@@ -522,7 +651,7 @@ process.on('SIGINT', async () => {
 });
 
 // Also works with child loggers (they share parent transports)
-const apiLogger = logger.child({ context: { component: 'api' } });
+const apiLogger = logger.child({ messagePrefix: '[API]' });
 await logger.flushAll(); // Flushes all transports including Discord singleton
 
 // Manual flush for specific scenarios
@@ -543,7 +672,7 @@ The main logger object with comprehensive functionality.
 - `logger.setOptions(newOptions: LoggerOptions): void`: Merge new options with existing configuration
 - `logger.resetOptions(): void`: Reset all options to default values
 - `logger.child(childOptions?: ChildLoggerOptions): ChildLogger`: Create a child logger with inherited config
-- `logger.flushAll(): Promise<void>`: Flush all transports including Discord (essential for graceful shutdown)
+- `logger.flushAll(): Promise<void>`: Flush all transports including Discord and WebSocket (essential for graceful shutdown)
 
 **Logging Methods:** (all support structured data as first parameter when it's a plain object)
 - `logger.fatal(message: string, ...args: unknown[]): void`
@@ -555,7 +684,7 @@ The main logger object with comprehensive functionality.
 
 ### `ChildLogger`
 
-Child loggers inherit parent configuration and merge their context with parent context.
+Child loggers inherit parent configuration and can add message prefixes and default data.
 
 **Methods:**
 - All logging methods (`fatal`, `error`, `warn`, `info`, `debug`, `trace`)
@@ -597,7 +726,7 @@ export interface LoggerOptions {
   pluggableFormatter?: LogFormatter;
   /** Discord webhook URL for sending logs with discord: true flag */
   discordWebhookUrl?: string;
-  /** Context for this logger (merged with child logger contexts) */
+  /** Context for this logger */
   context?: Record<string, unknown>;
 }
 ```
@@ -605,9 +734,11 @@ export interface LoggerOptions {
 ### `ChildLoggerOptions` Interface
 
 ```typescript
-export interface ChildLoggerOptions extends Partial<LoggerOptions> {
-  /** Contextual data to include with every log entry from this child logger. */
-  context?: Record<string, unknown>;
+export interface ChildLoggerOptions {
+  /** Prefix to add to all log messages from this child logger */
+  messagePrefix?: string;
+  /** Contextual data to include with every log entry from this child logger */
+  defaultData?: Record<string, unknown>;
 }
 ```
 
@@ -615,14 +746,40 @@ export interface ChildLoggerOptions extends Partial<LoggerOptions> {
 
 ```typescript
 export interface RedactionConfig {
-  /** Keys to redact in structured data and objects */
-  keys: string[];
-  /** Replacement text for redacted values. Default: '[REDACTED]' */
-  replacement?: string;
-  /** Whether to perform case-insensitive key matching. Default: true */
+  /** Target log entry fields to apply redaction to. Default: ['args', 'data', 'message'] */
+  fields?: string[];
+  /** Keys to redact with wildcard support (e.g., '*.password', 'user.*') */
+  keys?: string[];
+  /** Regular expressions for key matching */
+  keyPatterns?: RegExp[];
+  /** Regular expressions to match and redact values regardless of keys */
+  valuePatterns?: RegExp[];
+  /** Whether to redact sensitive patterns in log messages and string arguments */
+  redactStrings?: boolean;
+  /** String patterns to redact in messages and string args */
+  stringPatterns?: RegExp[];
+  /** Paths/keys to whitelist from redaction (takes precedence) */
+  whitelist?: string[];
+  /** Regular expressions for whitelisting paths/keys */
+  whitelistPatterns?: RegExp[];
+  /** Per-field or per-path specific redaction configurations */
+  fieldConfigs?: Record<string, FieldRedactionConfig>;
+  /** Custom redaction function */
+  customRedactor?: CustomRedactor;
+  /** Replacement text or function. Default: '[REDACTED]' */
+  replacement?: string | ReplacementFunction;
+  /** Case-insensitive key matching. Default: true */
   caseInsensitive?: boolean;
   /** Where to apply redaction: 'console', 'file', or 'both'. Default: 'both' */
   redactIn?: 'console' | 'file' | 'both';
+  /** Enable audit logging for debugging/compliance. Default: false */
+  auditRedaction?: boolean;
+  /** Custom audit hook function for handling redaction events */
+  auditHook?: AuditHook;
+  /** Deep clone objects before redaction. Default: true */
+  deepClone?: boolean;
+  /** Maximum depth for recursive redaction. Default: 10 */
+  maxDepth?: number;
 }
 ```
 
@@ -729,6 +886,26 @@ interface DiscordWebhookTransportOptions {
 }
 ```
 
+#### `WebSocketTransport`
+Streams log entries to a WebSocket server in real-time with automatic reconnection and queue management.
+
+```typescript
+const wsTransport = new WebSocketTransport(
+  url: string, 
+  options?: WebSocketTransportOptions
+);
+```
+
+**Options:**
+```typescript
+interface WebSocketTransportOptions {
+  reconnectIntervalMs?: number;      // Default: 1000
+  maxReconnectIntervalMs?: number;   // Default: 30000
+  redact?: boolean;                  // Default: true
+  serializer?: (entry: LogEntry) => string; // Default: JSON.stringify
+}
+```
+
 ### Built-in Formatters
 
 #### `LogfmtFormatter`
@@ -773,7 +950,8 @@ try {
 
 // Type-safe child logger creation
 const typedChild = logger.child({
-  context: { service: 'auth', version: '1.0.0' }
+  messagePrefix: '[AUTH]',
+  defaultData: { service: 'auth', version: '1.0.0' }
 });
 
 // Circular reference handling

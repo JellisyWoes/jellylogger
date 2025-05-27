@@ -4,13 +4,27 @@ JellyLogger is designed to be extensible through custom transports and formatter
 
 ## Table of Contents
 
-- [Custom Transports](#custom-transports)
-- [Transport Interface](#transport-interface)
-- [Transport Examples](#transport-examples)
-- [Custom Formatters](#custom-formatters)
-- [Advanced Transport Features](#advanced-transport-features)
-- [Testing Custom Extensions](#testing-custom-extensions)
-- [Best Practices](#best-practices)
+- [Extending JellyLogger](#extending-jellylogger)
+  - [Table of Contents](#table-of-contents)
+  - [Custom Transports](#custom-transports)
+    - [Transport Interface](#transport-interface)
+    - [Basic Custom Transport](#basic-custom-transport)
+  - [Transport Examples](#transport-examples)
+    - [Database Transport](#database-transport)
+    - [HTTP Transport](#http-transport)
+    - [Email Transport](#email-transport)
+  - [Custom Formatters](#custom-formatters)
+    - [Advanced Formatter Example](#advanced-formatter-example)
+  - [Advanced Transport Features](#advanced-transport-features)
+    - [Rate Limiting](#rate-limiting)
+    - [Circuit Breaker](#circuit-breaker)
+  - [Testing Custom Extensions](#testing-custom-extensions)
+    - [Testing Transports](#testing-transports)
+    - [Testing Formatters](#testing-formatters)
+  - [Best Practices](#best-practices)
+    - [Error Handling](#error-handling)
+    - [Resource Management](#resource-management)
+    - [Configuration Validation](#configuration-validation)
 
 ## Custom Transports
 
@@ -76,7 +90,7 @@ interface DatabaseConfig {
 class DatabaseTransport implements Transport {
   private config: DatabaseConfig;
   private queue: LogEntry[] = [];
-  private timer: NodeJS.Timeout | null = null;
+  private timer: Timer | null = null;
 
   constructor(config: DatabaseConfig) {
     this.config = {
@@ -132,59 +146,6 @@ class DatabaseTransport implements Transport {
 
     // Your database insertion logic here
     console.log(`Would insert ${values.length} log entries to database`);
-  }
-}
-```
-
-### Syslog Transport
-
-```typescript
-import { Transport, LogEntry, LoggerOptions, LogLevel } from 'jellylogger';
-
-class SyslogTransport implements Transport {
-  private facility: number;
-  private hostname: string;
-  private tag: string;
-
-  constructor(options: {
-    facility?: number;
-    hostname?: string;
-    tag?: string;
-  } = {}) {
-    this.facility = options.facility ?? 16; // Local use 0
-    this.hostname = options.hostname ?? 'localhost';
-    this.tag = options.tag ?? 'jellylogger';
-  }
-
-  async log(entry: LogEntry, options: LoggerOptions): Promise<void> {
-    const priority = this.facility * 8 + this.getSyslogSeverity(entry.level);
-    const timestamp = new Date(entry.timestamp).toISOString();
-    
-    const syslogMessage = `<${priority}>${timestamp} ${this.hostname} ${this.tag}: ${entry.message}`;
-    
-    // Send to syslog daemon (example using UDP)
-    await this.sendToSyslog(syslogMessage);
-  }
-
-  private getSyslogSeverity(level: LogLevel): number {
-    switch (level) {
-      case LogLevel.FATAL: return 0; // Emergency
-      case LogLevel.ERROR: return 3; // Error  
-      case LogLevel.WARN: return 4;  // Warning
-      case LogLevel.INFO: return 6;  // Informational
-      case LogLevel.DEBUG: return 7; // Debug
-      case LogLevel.TRACE: return 7; // Debug
-      default: return 6;
-    }
-  }
-
-  private async sendToSyslog(message: string): Promise<void> {
-    // Implementation would send UDP packet to syslog daemon
-    console.log(`SYSLOG: ${message}`);
-  }
-
-  async flush(): Promise<void> {
-    // Syslog is typically fire-and-forget
   }
 }
 ```
@@ -294,7 +255,7 @@ interface EmailConfig {
 class EmailTransport implements Transport {
   private config: EmailConfig;
   private queue: LogEntry[] = [];
-  private timer: NodeJS.Timeout | null = null;
+  private timer: Timer | null = null;
 
   constructor(config: EmailConfig) {
     this.config = {
@@ -678,6 +639,59 @@ class ResourceManagedTransport implements Transport {
     await this.cleanup();
   }
 
+  private async cleanup(): Promise<void> {
+    // Clean up any open resources (files, connections, etc.)
+    for (const resource of this.resources) {
+      try {
+        await resource.close?.();
+      } catch (error) {
+        console.error('Error closing resource:', error);
+      }
+    }
+    this.resources = [];
+  }
+}
+```
+
+### Configuration Validation
+
+```typescript
+interface TransportConfig {
+  url: string;
+  timeout?: number;
+  retries?: number;
+}
+
+class ValidatingTransport implements Transport {
+  private config: Required<TransportConfig>;
+
+  constructor(config: TransportConfig) {
+    this.config = this.validateConfig(config);
+  }
+
+  private validateConfig(config: TransportConfig): Required<TransportConfig> {
+    if (!config.url) {
+      throw new Error('URL is required');
+    }
+
+    if (!config.url.startsWith('http')) {
+      throw new Error('URL must start with http or https');
+    }
+
+    return {
+      url: config.url,
+      timeout: config.timeout ?? 5000,
+      retries: config.retries ?? 3
+    };
+  }
+
+  async log(entry: LogEntry, options: LoggerOptions): Promise<void> {
+    // Use validated config
+  }
+}
+```
+
+This extensibility system allows you to adapt JellyLogger to any logging destination or format while maintaining consistent behavior and error handling.
   private async cleanup(): Promise<void> {
     // Clean up any open resources (files, connections, etc.)
     for (const resource of this.resources) {

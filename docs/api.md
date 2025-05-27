@@ -592,69 +592,6 @@ logger.setOptions({
   }
 });
 ```
-logger.info({ data: obj }, 'Object with circular reference');
-// Circular references are safely handled
-```
-
-### Automatic Type Coercion
-
-JellyLogger safely handles various data types:
-
-```typescript
-logger.info('Mixed types', 123, true, null, undefined, Symbol('test'), BigInt(123));
-// All types are safely converted for logging
-```
-
-## Configuration Examples
-
-### Production Configuration
-
-```typescript
-import { 
-  logger, 
-  LogLevel, 
-  FileTransport,
-  NdjsonFormatter 
-} from 'jellylogger';
-
-logger.setOptions({
-  level: LogLevel.WARN,
-  format: 'json',
-  pluggableFormatter: new NdjsonFormatter(),
-  transports: [
-    new FileTransport('./logs/production.log', {
-      maxFileSize: 100 * 1024 * 1024, // 100MB
-      maxFiles: 10,
-      compress: true
-    })
-  ],
-  redaction: {
-    keys: ['password', 'token', 'apiKey', 'secret'],
-    replacement: '[REDACTED]'
-  }
-});
-```
-
-### Development Configuration
-
-```typescript
-import { 
-  logger, 
-  LogLevel, 
-  ConsoleTransport 
-} from 'jellylogger';
-
-logger.setOptions({
-  level: LogLevel.DEBUG,
-  useHumanReadableTime: true,
-  format: 'string',
-  transports: [new ConsoleTransport()],
-  customConsoleColors: {
-    [LogLevel.DEBUG]: '#00FFFF',
-    [LogLevel.INFO]: '#00FF00'
-  }
-});
-```
 
 ### Multi-Transport Configuration
 

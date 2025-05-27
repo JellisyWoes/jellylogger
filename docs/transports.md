@@ -61,7 +61,7 @@ logger.info('This will appear in the console with colors');
 
 ### FileTransport
 
-Writes logs to files with support for rotation, compression, and proper file locking.
+Writes logs to files with support for rotation, compression, and proper file locking using Bun's optimized file operations.
 
 ```typescript
 import { FileTransport, LogLevel } from 'jellylogger';
@@ -104,10 +104,10 @@ interface LogRotationConfig {
 
 **Features:**
 - Automatic log rotation by size or date
-- Gzip compression of rotated files
+- Gzip compression of rotated files using Bun's native compression
 - Proper file locking to prevent corruption
 - Handles write errors gracefully
-- Uses Bun's optimized file operations
+- Uses Bun's optimized `Bun.write()` operations for performance
 
 ### DiscordWebhookTransport
 
@@ -133,7 +133,7 @@ logger.setOptions({
 });
 
 // Use the discord flag to send specific logs to Discord
-logger.error({ discord: true }, 'Critical error occurred!');
+logger.error('Critical error occurred!', { discord: true });
 ```
 
 **Options:**
@@ -158,6 +158,26 @@ interface DiscordWebhookTransportOptions {
 - Rate limit detection and handling
 - Message formatting for Discord (supports JSON code blocks)
 - Singleton pattern for webhook URL reuse
+
+### WebSocketTransport
+
+Sends log entries over a WebSocket connection for real-time log streaming.
+
+```typescript
+import { WebSocketTransport } from 'jellylogger';
+
+const wsTransport = new WebSocketTransport('ws://localhost:3000/logs');
+
+logger.setOptions({
+  transports: [wsTransport]
+});
+```
+
+**Features:**
+- Real-time log streaming over WebSocket
+- Automatic reconnection on connection loss
+- Buffering during disconnected states
+- JSON serialization of log entries
 
 ## Using Multiple Transports
 
@@ -187,12 +207,12 @@ logger.setOptions({
 logger.info('Application started');
 
 // This goes to console, file, and Discord
-logger.error({ discord: true }, 'Database connection failed');
+logger.error('Database connection failed', { discord: true });
 ```
 
 ## Creating Custom Transports
 
-Create custom transports by implementing the `Transport` interface:
+Create custom transports by implementing the `Transport` interface. Here's an example using Bun's native HTTP server capabilities:
 
 ```typescript
 import { Transport, LogEntry, LoggerOptions, LogLevel } from 'jellylogger';
@@ -221,6 +241,7 @@ class SlackTransport implements Transport {
     };
 
     try {
+      // Use Bun's optimized fetch
       const response = await fetch(this.webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -318,13 +339,19 @@ const discordTransport = new DiscordWebhookTransport(webhookUrl, {
 
 ### Flushing
 
-Ensure all pending logs are written before shutdown:
+Ensure all pending logs are written before shutdown using Bun's process handling:
 
 ```typescript
 // Flush all transports
 await logger.flushAll();
 
-// Or flush individual transports
+// Set up proper shutdown handling with Bun
+process.on('SIGTERM', async () => {
+  await logger.flushAll();
+  process.exit(0);
+});
+
+// Or flush individual transports if you have references
 await fileTransport.flush();
 await discordTransport.flush();
 ```
@@ -336,18 +363,19 @@ await discordTransport.flush();
 1. **Use appropriate log levels** for each transport
 2. **Batch operations** for remote transports (Discord handles this automatically)
 3. **Use async operations** properly in custom transports
+4. **Leverage Bun's performance** - use `Bun.write()` for file operations
 
 ### Configuration
 
 ```typescript
-// Development setup
+// Development setup with Bun
 logger.setOptions({
   level: LogLevel.DEBUG,
   transports: [new ConsoleTransport()],
   useHumanReadableTime: true
 });
 
-// Production setup
+// Production setup optimized for Bun
 logger.setOptions({
   level: LogLevel.INFO,
   transports: [
@@ -369,7 +397,7 @@ logger.setOptions({
 ### Error Recovery
 
 ```typescript
-// Custom transport with fallback
+// Custom transport with fallback using Bun's error handling
 class ResilientTransport implements Transport {
   constructor(
     private primary: Transport,
@@ -394,4 +422,31 @@ class ResilientTransport implements Transport {
 }
 ```
 
-This comprehensive transport system provides flexibility, reliability, and performance for all your logging needs.
+### Bun-Optimized File Transport Example
+
+```typescript
+class BunOptimizedFileTransport implements Transport {
+  constructor(private filePath: string) {}
+
+  async log(entry: LogEntry, options: LoggerOptions): Promise<void> {
+    const logLine = this.formatEntry(entry) + '\n';
+    
+    try {
+      // Use Bun's optimized file writing
+      await Bun.write(this.filePath, logLine, { createPath: true });
+    } catch (error) {
+      console.error('Failed to write log:', error);
+    }
+  }
+
+  private formatEntry(entry: LogEntry): string {
+    return `${entry.timestamp} [${entry.levelName}] ${entry.message}`;
+  }
+
+  async flush(): Promise<void> {
+    // Bun.write() is already synchronous, no need to flush
+  }
+}
+```
+
+This comprehensive transport system provides flexibility, reliability, and performance optimized for Bun's runtime capabilities.

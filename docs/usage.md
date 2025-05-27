@@ -68,18 +68,15 @@ logger.info('This will be shown');
 
 ## Structured Logging
 
-Pass an object as the first argument for structured logging:
+Pass an object as an argument for structured logging:
 
 ```typescript
-// Structured data as first argument
-logger.info({ userId: 123, action: 'login' }, 'User logged in');
-logger.error({ error: 'ENOENT', file: '/tmp/missing.txt' }, 'File not found');
+// Structured data as argument
+logger.info('User logged in', { userId: 123, action: 'login' });
+logger.error('File not found', { error: 'ENOENT', file: '/tmp/missing.txt' });
 
-// With additional arguments
-logger.warn({ 
-  temperature: 85, 
-  threshold: 80 
-}, 'Temperature warning', 'Check cooling system');
+// Multiple arguments are processed automatically
+logger.warn('Temperature warning', { temperature: 85, threshold: 80 }, 'Check cooling system');
 ```
 
 ### Error Logging
@@ -93,10 +90,25 @@ try {
   logger.error('Operation failed', error);
   
   // Or with structured data
-  logger.error({ 
+  logger.error('Operation failed', { 
     operation: 'file-read',
     retries: 3 
-  }, 'Operation failed', error);
+  }, error);
+}
+```
+
+### Bun-Specific Error Handling
+
+```typescript
+// Using Bun's file operations with error logging
+try {
+  const data = await Bun.file('./config.json').json();
+  logger.info('Config loaded successfully', { configKeys: Object.keys(data) });
+} catch (error) {
+  logger.error('Failed to load config', { 
+    file: './config.json',
+    error: error.code || 'UNKNOWN'
+  }, error);
 }
 ```
 
@@ -142,6 +154,20 @@ logger.setOptions({
 });
 ```
 
+### Environment-Based Configuration
+
+```typescript
+// Use Bun's environment variable handling
+const isDevelopment = process.env.NODE_ENV === 'development';
+const logLevel = process.env.LOG_LEVEL || (isDevelopment ? 'DEBUG' : 'INFO');
+
+logger.setOptions({
+  level: LogLevel[logLevel as keyof typeof LogLevel] || LogLevel.INFO,
+  useHumanReadableTime: isDevelopment,
+  format: isDevelopment ? 'string' : 'json'
+});
+```
+
 ## Transports
 
 ### Console Transport
@@ -163,7 +189,7 @@ import { FileTransport } from 'jellylogger';
 // Basic file logging
 const fileTransport = new FileTransport('./logs/app.log');
 
-// With log rotation
+// With log rotation optimized for Bun
 const rotatingFileTransport = new FileTransport('./logs/app.log', {
   maxFileSize: 10 * 1024 * 1024, // 10MB
   maxFiles: 5,
@@ -196,6 +222,18 @@ logger.setOptions({
 });
 ```
 
+### WebSocket Transport
+
+```typescript
+import { WebSocketTransport } from 'jellylogger';
+
+const wsTransport = new WebSocketTransport('ws://localhost:8080/logs');
+
+logger.setOptions({
+  transports: [wsTransport]
+});
+```
+
 ### Multiple Transports
 
 ```typescript
@@ -215,18 +253,26 @@ Create child loggers with inherited configuration and additional context:
 ```typescript
 // Create a child logger with context
 const userLogger = logger.child({
-  context: { module: 'user-service', version: '1.0.0' }
+  context: { service: 'user-management', version: '1.0.0' }
 });
 
 // Child loggers inherit parent configuration
-userLogger.info('User created'); // Includes context automatically
+userLogger.info('User created', { userId: 123 }); 
+// Output includes context: { service: 'user-management', version: '1.0.0', userId: 123 }
 
-// Create nested child loggers
-const authLogger = userLogger.child({
-  context: { component: 'authentication' }
+// Create service-specific child loggers
+const dbLogger = logger.child({
+  context: { component: 'database', pool: 'primary' }
 });
 
-authLogger.error('Login failed'); // Includes both parent and child context
+const apiLogger = logger.child({
+  context: { component: 'api', port: 3000 }
+});
+
+// Nested child loggers
+const authDbLogger = dbLogger.child({
+  context: { table: 'users', operation: 'auth' }
+});
 ```
 
 ## Redaction
@@ -249,11 +295,37 @@ logger.setOptions({
 });
 
 // Sensitive data will be automatically redacted
-logger.info({ 
+logger.info('User login attempt', { 
   username: 'john',
   password: 'secret123',  // Will be redacted
   apiKey: 'sk-abc123'     // Will be redacted
-}, 'User login attempt');
+});
+```
+
+### Advanced Redaction Patterns
+
+```typescript
+logger.setOptions({
+  redaction: {
+    // Wildcard patterns
+    keys: ['*.password', 'user.*Token', 'config.*.secret'],
+    
+    // Complex patterns for sensitive data
+    valuePatterns: [
+      /sk-[a-zA-Z0-9]{24}/,     // API keys
+      /\b[A-Z0-9]{20,}\b/,      // Generic tokens
+      /eyJ[a-zA-Z0-9_-]*\./     // JWT tokens
+    ],
+    
+    // Custom replacement function
+    replacement: (value, key, path) => {
+      if (typeof value === 'string' && value.length > 10) {
+        return `[REDACTED:${value.length}]`;
+      }
+      return '[REDACTED]';
+    }
+  }
+});
 ```
 
 ## Discord Integration
@@ -269,8 +341,8 @@ logger.setOptions({
 });
 
 // Send to Discord using the discord flag
-logger.error({ discord: true }, 'Critical error occurred!');
-logger.info({ discord: true, userId: 123 }, 'Important event');
+logger.error('Critical error occurred!', { discord: true });
+logger.info('Important event', { discord: true, userId: 123 });
 ```
 
 ### Dedicated Discord Transport
@@ -311,8 +383,14 @@ logger.setOptions({
 ### Async Logging and Flushing
 
 ```typescript
-// Ensure all logs are written before shutdown
+// Ensure all logs are written before shutdown using Bun's process handling
 process.on('SIGTERM', async () => {
+  await logger.flushAll();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('\nGracefully shutting down...');
   await logger.flushAll();
   process.exit(0);
 });
@@ -321,7 +399,7 @@ process.on('SIGTERM', async () => {
 await logger.flushAll();
 ```
 
-### Performance Considerations
+### Performance Considerations with Bun
 
 ```typescript
 // Set appropriate log level for production
@@ -329,16 +407,88 @@ logger.setOptions({
   level: LogLevel.WARN // Only warnings and errors in production
 });
 
-// Use structured logging sparingly in high-frequency code
-for (let i = 0; i < 1000000; i++) {
-  // Avoid this in tight loops
-  logger.debug({ iteration: i }, 'Processing item');
+// Use structured logging efficiently
+const performBulkOperation = async (items: any[]) => {
+  const startTime = performance.now();
   
-  // Better: Log periodically
-  if (i % 10000 === 0) {
-    logger.debug({ processed: i }, 'Batch processed');
+  // Log start of operation
+  logger.info('Starting bulk operation', { 
+    itemCount: items.length,
+    operation: 'bulk-process'
+  });
+  
+  for (let i = 0; i < items.length; i++) {
+    // Avoid logging in tight loops - log periodically
+    if (i % 1000 === 0) {
+      logger.debug('Bulk operation progress', { 
+        processed: i, 
+        total: items.length,
+        percentComplete: Math.round((i / items.length) * 100)
+      });
+    }
+    
+    // Process item
+    await processItem(items[i]);
   }
-}
+  
+  const duration = performance.now() - startTime;
+  logger.info('Bulk operation completed', {
+    itemCount: items.length,
+    duration: `${duration.toFixed(2)}ms`,
+    throughput: `${(items.length / (duration / 1000)).toFixed(2)} items/sec`
+  });
+};
+```
+
+### Integration with Bun's HTTP Server
+
+```typescript
+import { logger } from 'jellylogger';
+
+// HTTP request logging middleware
+const requestLogger = (req: Request) => {
+  const startTime = performance.now();
+  const requestId = crypto.randomUUID();
+  
+  // Create request-scoped logger
+  const reqLogger = logger.child({
+    context: { requestId, method: req.method, url: req.url }
+  });
+  
+  reqLogger.info('Request started');
+  
+  return {
+    logger: reqLogger,
+    logResponse: (response: Response) => {
+      const duration = performance.now() - startTime;
+      reqLogger.info('Request completed', {
+        status: response.status,
+        duration: `${duration.toFixed(2)}ms`
+      });
+    }
+  };
+};
+
+// Use with Bun's server
+const server = Bun.serve({
+  port: 3000,
+  fetch(req) {
+    const { logger: reqLogger, logResponse } = requestLogger(req);
+    
+    try {
+      const response = new Response('Hello World!');
+      logResponse(response);
+      return response;
+    } catch (error) {
+      reqLogger.error('Request failed', error);
+      const errorResponse = new Response('Internal Server Error', { status: 500 });
+      logResponse(errorResponse);
+      return errorResponse;
+    }
+  },
+});
+
+logger.info('Server started', { port: server.port });
 ```
 
 ## Complete Example
@@ -353,10 +503,10 @@ import {
   LogfmtFormatter
 } from 'jellylogger';
 
-// Configure logger
+// Configure logger for Bun application
 logger.setOptions({
-  level: LogLevel.INFO,
-  useHumanReadableTime: true,
+  level: process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG,
+  useHumanReadableTime: process.env.NODE_ENV !== 'production',
   format: 'string',
   transports: [
     new ConsoleTransport(),
@@ -379,34 +529,74 @@ logger.setOptions({
 });
 
 // Create service-specific loggers
-const dbLogger = logger.child({ context: { service: 'database' } });
-const apiLogger = logger.child({ context: { service: 'api' } });
+const dbLogger = logger.child({ 
+  context: { service: 'database', pool: 'primary' } 
+});
 
-// Application code
-logger.info('Application starting');
+const apiLogger = logger.child({ 
+  context: { service: 'api', version: '1.0.0' } 
+});
 
-try {
-  // Database operations
-  dbLogger.info({ query: 'SELECT * FROM users' }, 'Executing query');
-  
-  // API operations
-  apiLogger.info({ 
-    method: 'POST', 
-    path: '/api/users',
-    userId: 123 
-  }, 'API request');
-  
-  // Critical error with Discord notification
-  logger.error({ 
-    discord: true,
-    error: 'DATABASE_DOWN',
-    lastSeen: new Date()
-  }, 'Database connection lost');
-  
-} catch (error) {
-  logger.error({ discord: true }, 'Unhandled error', error);
-} finally {
-  // Ensure all logs are written
+// Application startup
+const startApp = async () => {
+  logger.info('Application starting', { 
+    bunVersion: Bun.version,
+    nodeEnv: process.env.NODE_ENV 
+  });
+
+  try {
+    // Database connection with Bun's optimized operations
+    dbLogger.info('Connecting to database');
+    
+    // API server startup
+    const server = Bun.serve({
+      port: 3000,
+      fetch(req) {
+        const reqLogger = apiLogger.child({
+          context: { requestId: crypto.randomUUID() }
+        });
+        
+        reqLogger.info('API request', { 
+          method: req.method, 
+          path: new URL(req.url).pathname 
+        });
+        
+        return new Response('Hello from JellyLogger!');
+      },
+    });
+    
+    apiLogger.info('API server started', { port: server.port });
+    
+    // Critical error with Discord notification
+    setTimeout(() => {
+      logger.error('Simulated critical error', { 
+        discord: true,
+        error: 'SYSTEM_OVERLOAD',
+        timestamp: new Date().toISOString()
+      });
+    }, 5000);
+    
+  } catch (error) {
+    logger.error('Startup failed', { discord: true }, error);
+    process.exit(1);
+  }
+};
+
+// Graceful shutdown
+const shutdown = async () => {
+  logger.info('Shutting down gracefully');
   await logger.flushAll();
-}
+  process.exit(0);
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+// Start the application
+startApp().catch((error) => {
+  logger.fatal('Failed to start application', error);
+  process.exit(1);
+});
 ```
+
+This comprehensive usage guide demonstrates how to leverage JellyLogger's full feature set while taking advantage of Bun's performance optimizations and native APIs.
