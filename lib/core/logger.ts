@@ -1,5 +1,5 @@
 import { LogLevel } from './constants';
-import type { LoggerOptions, LogEntry, BaseLogger, ChildLoggerOptions } from './types';
+import type { LoggerOptions, LogEntry, BaseLogger, ChildLoggerOptions, Transport, JellyLogger } from './types'; // Added JellyLogger
 import { ConsoleTransport } from '../transports/ConsoleTransport';
 import { DiscordWebhookTransport } from '../transports/DiscordWebhookTransport';
 import { getTimestamp } from '../utils/time';
@@ -104,6 +104,11 @@ export class ChildLogger implements BaseLogger {
       } as Record<string, unknown>;
     }
 
+    // Ensure the parent passed to new ChildLogger is compatible.
+    // If this.parent is BaseLogger, and the main logger is JellyLogger,
+    // the 'this' in logger.child() is JellyLogger.
+    // So, new ChildLogger(this.parent as BaseLogger, mergedOptions) is fine.
+    // Or, if this.parent is the main logger instance, it's already compatible.
     return new ChildLogger(this.parent, mergedOptions);
   }
 }
@@ -120,14 +125,7 @@ export const defaultOptions: LoggerOptions = {
 // Singleton Discord transport instance
 let globalDiscordTransport: DiscordWebhookTransport | null = null;
 
-export const logger: BaseLogger & {
-  options: LoggerOptions;
-  setOptions(newOptions: LoggerOptions): void;
-  resetOptions(): void;
-  _log(level: LogLevel, message: string, ...args: unknown[]): void;
-  _logWithData(level: LogLevel, message: string, data?: Record<string, unknown>, ...args: unknown[]): void;
-  flushAll(): Promise<void>;
-} = {
+export const logger: JellyLogger = {
   options: { ...defaultOptions },
 
   setOptions(newOptions: LoggerOptions): void {
@@ -221,7 +219,7 @@ export const logger: BaseLogger & {
     }
 
     function getDiscordTransport(webhookUrl: string): DiscordWebhookTransport {
-      if (!globalDiscordTransport || globalDiscordTransport['webhookUrl'] !== webhookUrl) {
+      if (!globalDiscordTransport || (globalDiscordTransport as any)['webhookUrl'] !== webhookUrl) { // Type assertion for clarity
         globalDiscordTransport = new DiscordWebhookTransport(webhookUrl);
       }
       return globalDiscordTransport;
@@ -277,5 +275,25 @@ export const logger: BaseLogger & {
     }
 
     await Promise.all(flushPromises);
+  },
+
+  addTransport(transport: Transport): void {
+    if (!this.options.transports) {
+      this.options.transports = [];
+    }
+    this.options.transports.push(transport);
+  },
+
+  removeTransport(transport: Transport): void {
+    if (!this.options.transports) return;
+    this.options.transports = this.options.transports.filter(t => t !== transport);
+  },
+
+  clearTransports(): void {
+    this.options.transports = [];
+  },
+
+  setTransports(transports: Transport[]): void {
+    this.options.transports = transports;
   },
 };

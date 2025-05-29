@@ -1,12 +1,11 @@
 // Core logger
 export { logger, defaultOptions } from './core/logger';
 export { ChildLogger } from './core/logger';
-export type { BaseLogger, ChildLoggerOptions } from './core/types';
+export type { BaseLogger, ChildLoggerOptions, Transport, JellyLogger } from './core/types';
 
 // Log levels and types
 export { LogLevel } from './core/constants';
-export type { LoggerOptions, CustomConsoleColors, Transport, LogEntry } from './core/types';
-export type { RedactionConfig } from './redaction/config';
+export type { LoggerOptions, CustomConsoleColors, LogEntry, RedactionConfig } from './core/types';
 export type { LogRotationConfig } from './transports/FileTransport';
 
 // Transports
@@ -24,6 +23,17 @@ export { NdjsonFormatter } from './formatters/NdjsonFormatter';
 export { isRecord, isErrorLike } from './utils/typeGuards';
 export { getTimestamp, serializeError, processLogArgs } from './utils/serialization';
 export { toAnsiColor } from './utils/colors';
+
+// Transport preset helpers
+export {
+  useConsoleAndFile,
+  useConsoleFileAndDiscord,
+  useConsoleAndWebSocket,
+  useAllTransports,
+  addFileLogging,
+  addDiscordLogging,
+  addWebSocketLogging
+} from './utils/presets';
 
 // Re-export redaction functionality
 export { 

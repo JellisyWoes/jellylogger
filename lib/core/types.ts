@@ -178,3 +178,19 @@ export interface BaseLogger {
 
 // Forward declaration for ChildLogger
 export interface ChildLogger extends BaseLogger {}
+
+/**
+ * Interface for the main logger instance, including transport management.
+ */
+export interface JellyLogger extends BaseLogger {
+  options: LoggerOptions;
+  setOptions(newOptions: LoggerOptions): void;
+  resetOptions(): void;
+  _log(level: LogLevel, message: string, ...args: unknown[]): void;
+  _logWithData(level: LogLevel, message: string, data?: Record<string, unknown>, ...args: unknown[]): void;
+  flushAll(): Promise<void>;
+  addTransport(transport: Transport): void;
+  removeTransport(transport: Transport): void;
+  clearTransports(): void;
+  setTransports(transports: Transport[]): void;
+}
