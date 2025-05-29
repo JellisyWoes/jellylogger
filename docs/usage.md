@@ -85,6 +85,29 @@ logger.warn('Temperature warning',
 // Output: [timestamp] WARN : Temperature warning {"temperature":85,"threshold":80,"location":"server-room-1"} Check cooling system
 ```
 
+### Handling Circular References
+
+JellyLogger safely handles circular references in objects by detecting them and replacing with descriptive placeholders:
+
+```typescript
+// Circular reference handling
+const circular: any = { name: 'example' };
+circular.self = circular;
+
+logger.info('Processing circular object', circular);
+// Output: [timestamp] INFO : Processing circular object [Object - Circular or Non-serializable]
+
+// Complex objects with circular refs are also handled
+const complex = {
+  user: { id: 123, name: 'John' },
+  cache: new Map()
+};
+complex.reference = complex;
+
+logger.info('Complex object', complex);
+// Circular parts are safely replaced with placeholders
+```
+
 ### Nested Structured Data
 
 ```typescript
@@ -224,6 +247,8 @@ logger.setOptions({ transports: [new ConsoleTransport()] });
 
 ### File Transport
 
+JellyLogger's FileTransport is designed for reliability and continues logging even when errors occur:
+
 ```typescript
 import { FileTransport } from 'jellylogger';
 
@@ -235,6 +260,31 @@ const fileTransport = new FileTransport('./logs/app.log', {
 });
 
 logger.setOptions({ transports: [fileTransport] });
+
+// FileTransport handles errors gracefully
+// Write failures are logged to console but don't throw exceptions
+// This ensures your application continues running even if logging fails
+```
+
+#### File Transport Error Handling
+
+The FileTransport is designed to be resilient:
+
+- **Non-blocking**: File write errors don't throw exceptions or crash your app
+- **Error logging**: Write failures are logged to console for debugging
+- **Graceful degradation**: Continues attempting to log even after errors
+- **Circular reference safety**: Automatically handles circular references in logged objects
+
+```typescript
+// These operations won't crash your app even if file system issues occur
+logger.info('Starting operation', { complexObject: someCircularRef });
+logger.error('Error occurred', someErrorObject);
+
+// Ensure all logs are flushed before shutdown
+process.on('SIGTERM', async () => {
+  await logger.flushAll(); // Safely flushes even if previous errors occurred
+  process.exit(0);
+});
 ```
 
 ### Discord Webhook Transport
@@ -438,6 +488,30 @@ process.on('SIGINT', async () => {
 await logger.flushAll();
 ```
 
+### Error Resilience
+
+JellyLogger is designed to continue operating even when individual transports fail:
+
+```typescript
+// Configure multiple transports for redundancy
+logger.setOptions({
+  transports: [
+    new ConsoleTransport(),           // Always works
+    new FileTransport('./app.log'),   // May fail due to disk issues
+    new DiscordWebhookTransport(url)  // May fail due to network issues
+  ]
+});
+
+// Even if file or Discord transports fail, console logging continues
+logger.error('Critical system error', {
+  error: 'DATABASE_DOWN',
+  timestamp: new Date().toISOString(),
+  affectedServices: ['user-auth', 'payments']
+});
+
+// The application continues running even if some transports fail
+```
+
 ### Performance Considerations with Bun
 
 ```typescript
@@ -446,12 +520,14 @@ logger.setOptions({ level: LogLevel.WARN });
 const performBulkOperation = async (items: any[]) => {
   const startTime = performance.now();
   logger.info('Starting bulk operation', { itemCount: items.length, operation: 'bulk-process' });
+  
   for (let i = 0; i < items.length; i++) {
     if (i % 1000 === 0) {
       logger.debug('Bulk operation progress', { processed: i, total: items.length });
     }
     await processItem(items[i]);
   }
+  
   const duration = performance.now() - startTime;
   logger.info('Bulk operation completed', {
     itemCount: items.length,
