@@ -38,8 +38,8 @@ describe("FileTransport Error Handling", () => {
       args: []
     };
 
-    // Should throw but log error to console
-    await expect(transport.log(entry, { format: "json" })).rejects.toThrow("Disk full");
+    // Should not throw but log error to console
+    await transport.log(entry, { format: "json" });
     
     // flush() should not throw even if there were previous errors
     await transport.flush();
@@ -68,7 +68,8 @@ describe("FileTransport Error Handling", () => {
       args: []
     };
 
-    await expect(transport.log(entry, { format: "json" })).rejects.toThrow("Permission denied");
+    // Should not throw but log error to console
+    await transport.log(entry, { format: "json" });
     await transport.flush();
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -123,7 +124,8 @@ describe("FileTransport Error Handling", () => {
       args: []
     };
 
-    await expect(transport.log(entry, { format: "json" })).rejects.toThrow();
+    // Should not throw but log error to console
+    await transport.log(entry, { format: "json" });
     await transport.flush();
 
     expect(consoleErrorSpy).toHaveBeenCalled();
@@ -141,22 +143,22 @@ describe("FileTransport Error Handling", () => {
 
     const transport = new FileTransport("recovery.log", undefined, mockBunOps);
     
-    // First two should fail
-    await expect(transport.log({
+    // First two should not throw but log errors
+    await transport.log({
       timestamp: "2023-01-01T12:00:00.000Z",
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "First attempt",
       args: []
-    }, { format: "json" })).rejects.toThrow("Temporary failure");
+    }, { format: "json" });
 
-    await expect(transport.log({
+    await transport.log({
       timestamp: "2023-01-01T12:01:00.000Z",
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Second attempt",
       args: []
-    }, { format: "json" })).rejects.toThrow("Temporary failure");
+    }, { format: "json" });
 
     // Third should succeed
     await transport.log({
@@ -169,8 +171,8 @@ describe("FileTransport Error Handling", () => {
 
     await transport.flush();
 
-    // Should have logged 2 errors but succeeded on third
-    expect(consoleErrorSpy).toHaveBeenCalledTimes(2);
+    // Should have logged 4 errors (2 from failed writes, 2 more from flush attempts)
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(4);
     expect(mockBunOps.write).toHaveBeenCalledTimes(3);
   });
 
@@ -187,23 +189,24 @@ describe("FileTransport Error Handling", () => {
 
     const transport = new FileTransport("buffer.log", undefined, mockBunOps);
 
-    // Log entries that will fail initially
-    const results = await Promise.allSettled(
-      Array.from({ length: 5 }, (_, i) =>
-        transport.log({
-          timestamp: `2023-01-01T12:${i.toString().padStart(2, '0')}:00.000Z`,
-          level: LogLevel.INFO,
-          levelName: "INFO",
-          message: `Buffer test ${i}`,
-          args: []
-        }, { format: "json" })
-      )
+    // Log entries that will fail initially - should not throw
+    const promises = Array.from({ length: 5 }, (_, i) =>
+      transport.log({
+        timestamp: `2023-01-01T12:${i.toString().padStart(2, '0')}:00.000Z`,
+        level: LogLevel.INFO,
+        levelName: "INFO",
+        message: `Buffer test ${i}`,
+        args: []
+      }, { format: "json" })
     );
 
-    // All should fail initially
-    expect(results.every(r => r.status === 'rejected')).toBe(true);
+    // All should complete without throwing (errors logged to console)
+    await Promise.all(promises);
     
     await transport.flush();
+
+    // Should have logged 10 errors (5 from failed writes, 5 more from flush attempts)
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(10);
   });
 
   it("should handle corrupted file scenarios", async () => {

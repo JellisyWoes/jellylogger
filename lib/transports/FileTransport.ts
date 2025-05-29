@@ -40,6 +40,9 @@ export class FileTransport implements Transport {
   private currentDate?: string;
   private isRotating: boolean = false;
   private pendingWrites: Promise<void>[] = [];
+  private writeQueue: Array<{ content: string; resolve: () => void; reject: (error: any) => void }> = [];
+  private processingQueue: boolean = false;
+  private rotationPromise: Promise<void> | null = null;
 
   /**
    * Creates a new FileTransport instance.
@@ -63,87 +66,202 @@ export class FileTransport implements Transport {
     if (rotationConfig?.dateRotation) {
       this.currentDate = new Date().toISOString().split('T')[0];
     }
+
+    // Ensure the directory exists
+    this.ensureDirectoryExists();
   }
 
   /**
-   * Logs an entry to the file with proper write locking.
+   * Ensure the log directory exists
+   */
+  private async ensureDirectoryExists(): Promise<void> {
+    try {
+      const dir = dirname(this.filePath);
+      await Bun.$`mkdir -p ${dir}`.quiet();
+    } catch (error) {
+      console.warn('Failed to create log directory:', error);
+    }
+  }
+
+  /**
+   * Process the write queue sequentially to prevent race conditions
+   */
+  private async processWriteQueue(): Promise<void> {
+    if (this.processingQueue) return;
+    this.processingQueue = true;
+
+    try {
+      while (this.writeQueue.length > 0) {
+        // Wait for any ongoing rotation to complete first
+        if (this.rotationPromise) {
+          try {
+            await this.rotationPromise;
+          } catch (error) {
+            console.error('Rotation failed, continuing with writes:', error);
+          }
+        }
+
+        const writeItem = this.writeQueue.shift();
+        if (!writeItem) continue;
+
+        try {
+          // Perform the actual write operation
+          await this.bunFileOps.write(this.fileInstance, writeItem.content);
+          writeItem.resolve();
+        } catch (error) {
+          console.error(`FileTransport write error:`, error);
+          writeItem.reject(error);
+        }
+      }
+    } finally {
+      this.processingQueue = false;
+    }
+  }
+
+  /**
+   * Add a write operation to the queue
+   */
+  private queueWrite(content: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.writeQueue.push({ content, resolve, reject });
+      
+      // Start processing the queue if not already processing
+      if (!this.processingQueue) {
+        this.processWriteQueue().catch(error => {
+          console.error('Error processing write queue:', error);
+        });
+      }
+    });
+  }
+
+  /**
+   * Logs an entry to the file with proper write locking and error handling.
    * @param entry - The log entry to write
    * @param options - Logger options for formatting
    */
   async log(entry: LogEntry, options: LoggerOptions): Promise<void> {
-    // Apply redaction specifically for file output
-    const redactedEntry = getRedactedEntry(entry, options.redaction, 'file');
-    
-    // Wait for any ongoing rotation to complete
-    while (this.isRotating) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-
-    // Check for date-based rotation
-    if (this.rotationConfig?.dateRotation) {
-      const currentDate = new Date().toISOString().split('T')[0];
-      if (this.currentDate !== currentDate) {
-        try {
-          await this.rotateLogs();
-          this.currentDate = currentDate;
-        } catch (error) {
-          console.error('FileTransport date rotation error:', error);
-          // Continue with logging even if rotation fails
+    try {
+      // Apply redaction specifically for file output
+      const redactedEntry = getRedactedEntry(entry, options.redaction, 'file');
+      
+      // Check for date-based rotation before writing
+      if (this.rotationConfig?.dateRotation) {
+        const currentDate = new Date().toISOString().split('T')[0];
+        if (this.currentDate !== currentDate) {
+          try {
+            this.rotationPromise = this.rotateLogs();
+            await this.rotationPromise;
+            this.currentDate = currentDate;
+            this.rotationPromise = null;
+          } catch (error) {
+            console.error('FileTransport date rotation error:', error);
+            this.rotationPromise = null;
+            // Continue with logging even if rotation fails
+          }
         }
       }
-    }
 
-    let logString: string;
-    if (options.pluggableFormatter) {
-      const formatted = options.pluggableFormatter.format(redactedEntry);
-      logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
-    } else if (options.formatter) {
-      try {
-        const formatted = options.formatter(redactedEntry);
+      // Format the log string
+      let logString: string;
+      if (options.pluggableFormatter) {
+        const formatted = options.pluggableFormatter.format(redactedEntry);
         logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
-      } catch (error) {
-        // Fallback to default formatting if custom formatter fails
-        console.error('Custom formatter failed in FileTransport, using default:', error instanceof Error ? error.message : String(error));
+      } else if (options.formatter) {
+        try {
+          const formatted = options.formatter(redactedEntry);
+          logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
+        } catch (error) {
+          // Fallback to default formatting if custom formatter fails
+          console.error('Custom formatter failed in FileTransport, using default:', error instanceof Error ? error.message : String(error));
+          logString = this.getDefaultLogString(redactedEntry);
+        }
+      } else if (options.format === 'json') {
+        try {
+          logString = JSON.stringify(redactedEntry) + osEOL;
+        } catch (e) {
+          // Handle circular references in JSON more robustly
+          try {
+            // Attempt a more robust stringification, sanitizing args and data
+            const sanitizedArgs = redactedEntry.args.map((arg: unknown) => {
+              if (typeof arg === 'object' && arg !== null) {
+                try {
+                  JSON.stringify(arg); // Test serializability
+                  return arg;
+                } catch {
+                  return '[Object - Circular or Non-serializable]';
+                }
+              }
+              return arg;
+            });
+
+            let sanitizedData: unknown = redactedEntry.data;
+            if (typeof redactedEntry.data === 'object' && redactedEntry.data !== null) {
+              try {
+                JSON.stringify(redactedEntry.data); // Test serializability
+                // If serializable, use it, otherwise it will be replaced by placeholder
+              } catch {
+                sanitizedData = '[Data - Circular or Non-serializable]';
+              }
+            }
+            
+            // Construct a new object with potentially problematic parts (like data) explicitly handled
+            // This avoids issues if redactedEntry itself is a complex object (e.g., proxy)
+            // that `...redactedEntry` might mishandle.
+            logString = JSON.stringify({
+              timestamp: redactedEntry.timestamp,
+              level: redactedEntry.level,
+              levelName: redactedEntry.levelName,
+              message: redactedEntry.message,
+              args: sanitizedArgs,
+              data: sanitizedData,
+            }) + osEOL;
+          } catch (e2) { // Inner catch for the robust stringification failure
+            // Final fallback: stringify only basic, known-safe properties
+            logString = JSON.stringify({
+              timestamp: redactedEntry.timestamp,
+              level: redactedEntry.level,
+              levelName: redactedEntry.levelName,
+              message: redactedEntry.message,
+              args: '[Args - Processing Error]',
+              data: '[Data - Processing Error]'
+            }) + osEOL;
+          }
+        }
+      } else {
         logString = this.getDefaultLogString(redactedEntry);
       }
-    } else if (options.format === 'json') {
-      try {
-        logString = JSON.stringify(redactedEntry) + osEOL;
-      } catch (e) {
-        // Handle circular references in JSON
-        logString = JSON.stringify({
-          ...redactedEntry,
-          args: redactedEntry.args.map((arg: unknown) => 
-            typeof arg === 'object' && arg !== null ? '[Object - Circular]' : arg
-          )
-        }) + osEOL;
-      }
-    } else {
-      logString = this.getDefaultLogString(redactedEntry);
-    }
 
-    const writePromise = this.writeToFile(logString);
-    this.pendingWrites.push(writePromise);
-    
-    try {
-      await writePromise;
+      // Queue the write operation
+      const writePromise = this.queueWrite(logString);
+      this.pendingWrites.push(writePromise);
       
-      // Check for size-based rotation after successful write
-      if (this.rotationConfig?.maxFileSize) {
-        try {
-          // Get current file size - in tests this will be the mocked size
-          const fileSize = this.fileInstance.size;
-          if (typeof fileSize === 'number' && fileSize > this.rotationConfig.maxFileSize) {
-            await this.rotateLogs();
+      try {
+        await writePromise;
+        
+        // Check for size-based rotation after successful write
+        if (this.rotationConfig?.maxFileSize && !this.rotationPromise) {
+          try {
+            // Get current file size
+            const fileSize = this.fileInstance.size;
+            if (typeof fileSize === 'number' && fileSize > this.rotationConfig.maxFileSize) {
+              this.rotationPromise = this.rotateLogs();
+              // Don't await here to avoid blocking subsequent writes
+              this.rotationPromise.finally(() => {
+                this.rotationPromise = null;
+              });
+            }
+          } catch (error) {
+            console.error('FileTransport size check error:', error);
+            // Continue with logging even if size check fails
           }
-        } catch (error) {
-          console.error('FileTransport size check error:', error);
-          // Continue with logging even if size check fails
         }
+      } finally {
+        // Remove completed write from pending list
+        this.pendingWrites = this.pendingWrites.filter(p => p !== writePromise);
       }
-    } finally {
-      // Remove completed write from pending list
-      this.pendingWrites = this.pendingWrites.filter(p => p !== writePromise);
+    } catch (error) {
+      console.error('FileTransport log error:', error);
+      // Don't throw - we want logging to continue even if file transport fails
     }
   }
 
@@ -181,15 +299,6 @@ export class FileTransport implements Transport {
     return `[${redactedEntry.timestamp}] ${levelString}: ${redactedEntry.message}${dataDisplay}${argsString}${osEOL}`;
   }
 
-  private async writeToFile(logString: string): Promise<void> {
-    try {
-      await this.bunFileOps.write(this.fileInstance, logString);
-    } catch (e) {
-      console.error(`FileTransport write error:`, e);
-      throw e;
-    }
-  }
-
   /**
    * Rotate log files with proper locking and error handling.
    */
@@ -199,8 +308,13 @@ export class FileTransport implements Transport {
     this.isRotating = true;
     
     try {
-      // Wait for all pending writes to complete
-      await Promise.all(this.pendingWrites);
+      // Wait for all pending writes to complete before rotation
+      await Promise.all([...this.pendingWrites]);
+      
+      // Ensure write queue is also processed
+      while (this.writeQueue.length > 0 || this.processingQueue) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
       
       const maxFiles = this.rotationConfig.maxFiles ?? 5;
       const compress = this.rotationConfig.compress ?? true;
@@ -291,7 +405,6 @@ export class FileTransport implements Transport {
         console.error('Critical error during log rotation:', error);
         // Try to continue with a new file instance even if rotation failed
         this.fileInstance = this.bunFileOps.file(this.filePath);
-        // Don't rethrow - we want to continue logging even if rotation fails
       }
     } finally {
       this.isRotating = false;
@@ -299,9 +412,44 @@ export class FileTransport implements Transport {
   }
 
   /**
-   * Wait for all pending writes to complete.
+   * Wait for all pending writes to complete and ensure all data is flushed.
    */
   async flush(_options?: LoggerOptions): Promise<void> {
-    await Promise.all(this.pendingWrites);
+    try {
+      // Wait for all pending write promises
+      if (this.pendingWrites.length > 0) {
+        await Promise.allSettled(this.pendingWrites);
+      }
+
+      // Process any remaining items in the write queue
+      if (this.writeQueue.length > 0) {
+        await this.processWriteQueue();
+      }
+
+      // Wait for any ongoing rotation to complete
+      if (this.rotationPromise) {
+        try {
+          await this.rotationPromise;
+        } catch (error) {
+          console.error('Error during rotation flush:', error);
+        }
+      }
+
+      // Ensure write queue is empty
+      while (this.writeQueue.length > 0 || this.processingQueue) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+
+      // Try to sync file to disk if possible (Bun-specific optimization)
+      try {
+        // Note: Bun doesn't have a direct fsync equivalent, but write operations are typically synchronous
+        // This is a placeholder for any future Bun-specific flush capabilities
+      } catch (error) {
+        // Ignore sync errors - not critical for basic functionality
+      }
+    } catch (error) {
+      console.error('FileTransport flush error:', error);
+      // Don't throw - we want the application to continue even if flush fails
+    }
   }
 }

@@ -177,10 +177,24 @@ export const logger: JellyLogger = {
     // Process arguments to separate structured data from other args
     for (const arg of nonNullArgs) {
       if (isRecord(arg) && !isErrorLike(arg)) {
-        if (extractedData) {
-          extractedData = { ...extractedData, ...arg };
+        // Test if the object is serializable (no circular references)
+        let isSerializable = true;
+        try {
+          JSON.stringify(arg);
+        } catch {
+          isSerializable = false;
+        }
+        
+        if (isSerializable) {
+          // Move serializable objects to data
+          if (extractedData) {
+            extractedData = { ...extractedData, ...arg };
+          } else {
+            extractedData = arg as Record<string, unknown>;
+          }
         } else {
-          extractedData = arg as Record<string, unknown>;
+          // Keep non-serializable objects in args but sanitize them
+          filteredArgs.push('[Object - Circular or Non-serializable]');
         }
       } else {
         filteredArgs.push(arg);
