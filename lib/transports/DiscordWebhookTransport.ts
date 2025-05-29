@@ -1,6 +1,6 @@
 import { getRedactedEntry } from '../redaction';
 import { LogLevel } from '../core/constants';
-import type { LogEntry, LoggerOptions, Transport } from '../core/types';
+import type { LogEntry, LoggerOptions, Transport, TransportOptions } from '../core/types';
 
 /**
  * Options for DiscordWebhookTransport batching.
@@ -52,9 +52,9 @@ export class DiscordWebhookTransport implements Transport {
     this.suppressConsoleErrors = opts?.suppressConsoleErrors ?? false;
   }
 
-  async log(entry: LogEntry, options: LoggerOptions): Promise<void> {
-    // Apply redaction for Discord (treat as console output)
-    const redactedEntry = getRedactedEntry(entry, options.redaction, 'console');
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    // Fallback to empty object if options is undefined
+    const redactedEntry = getRedactedEntry(entry, (options as any)?.redaction, 'console');
     this.queue.push(redactedEntry);
     if (!this.timer) {
       this.timer = setTimeout(() => this.flush(options), this.batchIntervalMs);
@@ -64,7 +64,7 @@ export class DiscordWebhookTransport implements Transport {
     }
   }
 
-  async flush(options?: LoggerOptions): Promise<void> {
+  async flush(options?: TransportOptions): Promise<void> {
     // If already flushing, wait for current flush to complete
     if (this.flushPromise) {
       return this.flushPromise;
@@ -78,15 +78,17 @@ export class DiscordWebhookTransport implements Transport {
     }
   }
 
-  private async _doFlush(options?: LoggerOptions): Promise<void> {
+  private async _doFlush(options?: TransportOptions): Promise<void> {
     if (this.isFlushing) return;
     this.isFlushing = true;
 
-    const loggerOptions: LoggerOptions = options || {
+    // Provide fallback LoggerOptions if not present
+    const loggerOptions: LoggerOptions = {
       level: LogLevel.INFO,
       useHumanReadableTime: false,
       transports: [],
-      format: 'string' as const,
+      format: 'string',
+      ...(options as any ?? {}),
     };
 
     try {

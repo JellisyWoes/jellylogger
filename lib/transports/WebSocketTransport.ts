@@ -111,9 +111,11 @@ export class WebSocketTransport implements Transport {
     }, this.reconnectInterval);
   }
 
-  async log(entry: LogEntry, options: LoggerOptions): Promise<void> {
+  async log(entry: LogEntry, options?: LoggerOptions): Promise<void> {
     const redact = this.options.redact ?? true;
-    const redactedEntry = redact ? getRedactedEntry(entry, options.redaction, 'file') : entry;
+    // Safely access redaction config if options is LoggerOptions
+    const redactionConfig = (options && 'redaction' in options) ? options.redaction : undefined;
+    const redactedEntry = redact ? getRedactedEntry(entry, redactionConfig, 'file') : entry;
     const msg = this.serializer(redactedEntry);
 
     // Add to queue

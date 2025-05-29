@@ -1,8 +1,8 @@
-// --- START BUN MOCK DEFINITION ---
-// This must be absolutely at the top, before any other imports that might touch 'bun' or its mocks.
-import { mock, spyOn } from "bun:test"; // Import mock separately for early use if needed by definitions
-import type { BunFile as ActualBunFile } from "bun"; // Type import for mock instance
+import { mock, expect } from "bun:test";
+import type { BunFile as ActualBunFile } from "bun";
+import type { Transport, LogEntry, TransportOptions } from "../lib/index";
 
+// --- BUN MOCKS ---
 const mockFileExistsForBunMock = mock<() => Promise<boolean>>(async () => false);
 const mockFileTextForBunMock = mock<() => Promise<string>>(async () => "");
 const mockBunFileInstanceWriterWriteForBunMock = mock(() => {});
@@ -26,90 +26,182 @@ const mockBunFileInstanceForBunMock = {
   })
 } as unknown as ActualBunFile;
 
-const _internalMockBunFileFn = mock(() => mockBunFileInstanceForBunMock);
-const _internalMockBunWriteFn = mock(async (_path: string | ActualBunFile | URL | number, _data: any) => { return Promise.resolve(1); }); // Default to resolve successfully
+export const actualMockBunFileFn = mock(() => mockBunFileInstanceForBunMock);
 
-// Mock for Bun shell operations
-const mockBunShell = mock((strings: TemplateStringsArray, ...values: any[]) => {
-  const command = String(strings[0]).trim();
-  // Return a mock shell result that resolves immediately
-  return {
-    quiet: () => Promise.resolve({ exitCode: 0, stdout: '', stderr: '' })
-  };
-});
+// Create a proper mock for Bun.write that matches the expected signature
+export const actualMockBunWriteFn = mock(
+  async (
+    destination: any,
+    input: any,
+    _options?: any
+  ) => Promise.resolve(1)
+) as typeof Bun.write;
 
-mock.module('bun', () => {
-  return {
-    file: _internalMockBunFileFn,
-    write: _internalMockBunWriteFn,
-    $: mockBunShell, // Add shell mock
-    color: (text: string, style?: string) => style ? `[color:${style}]${text}[/color]` : text,
-    // Minimal mock: if Bun.env or other things are needed, they must be added here.
-    // For this logger, it seems these are the primary Bun APIs used.
-  };
-});
-
-// Mock for 'os' module to control EOL in tests
-mock.module('os', () => {
-  return {
-    EOL: '\n', // Force EOL to be '\n' for consistent test results
-  };
-});
-// --- END BUN MOCK DEFINITION ---
-
-// Mock console methods globally for all tests
-export const infoSpy = spyOn(console, 'info').mockImplementation(() => {});
-export const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
-export const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
-export const debugSpy = spyOn(console, 'debug').mockImplementation(() => {});
-
-// Utility functions for creating and restoring console spies (centralized)
-export function spyConsoleInfo() {
-  const spy = spyOn(console, 'info').mockImplementation(() => {});
-  return () => spy.mockRestore();
-}
-export function spyConsoleWarn() {
-  const spy = spyOn(console, 'warn').mockImplementation(() => {});
-  return () => spy.mockRestore();
-}
-export function spyConsoleError() {
-  const spy = spyOn(console, 'error').mockImplementation(() => {});
-  return () => spy.mockRestore();
-}
-export function spyConsoleDebug() {
-  const spy = spyOn(console, 'debug').mockImplementation(() => {});
-  return () => spy.mockRestore();
-}
-
-// Mock Bun file operations for testing
-export const mockBunFileFn = mock(() => ({
-  exists: async () => true,
-  text: async () => "",
-  size: 0,
-} as any));
-
-export const mockBunWriteFn = mock(async () => 1);
-
-export const actualMockBunWriteFn = mockBunWriteFn;
-export const actualMockBunFileFn = mockBunFileFn;
-
-export const mockFileExists = mock(async () => true);
+export const mockFileExists = mock(async () => false);
 export const mockFileText = mock(async () => "");
 
-// Global setup - use Object.defineProperty to avoid readonly issues
+// Mock for Bun shell operations
+export const mockShellOps = {
+  mkdir: mock(async () => ({ exitCode: 0 })),
+  mv: mock(async () => ({ exitCode: 0 })),
+  rm: mock(async () => ({ exitCode: 0 }))
+};
+
+// Mock for 'os' module to control EOL in tests
+mock.module('os', () => ({ EOL: '\n' }));
+
+// Setup Bun global mocks
 if (typeof globalThis.Bun === 'undefined') {
   Object.defineProperty(globalThis, 'Bun', {
     value: {
-      file: mockBunFileFn,
-      write: mockBunWriteFn,
-      $: mockBunShell, // Add shell mock to global Bun
+      file: actualMockBunFileFn,
+      write: actualMockBunWriteFn,
+      $: mock((_strings: TemplateStringsArray, ..._values: any[]) => ({
+        quiet: () => Promise.resolve({ exitCode: 0, stdout: '', stderr: '' })
+      })),
     },
     writable: true,
-    configurable: true
+    configurable: true,
+    enumerable: true,
   });
 } else {
-  // If Bun already exists, just override the methods we need
-  globalThis.Bun.file = mockBunFileFn;
-  globalThis.Bun.write = mockBunWriteFn;
-  (globalThis.Bun as any).$ = mockBunShell; // Add shell mock
+  globalThis.Bun.file = actualMockBunFileFn;
+  globalThis.Bun.write = actualMockBunWriteFn;
+  (globalThis.Bun as any).$ = mock((strings: TemplateStringsArray, ...values: any[]) => ({
+    quiet: () => Promise.resolve({ exitCode: 0, stdout: '', stderr: '' })
+  }));
+}
+
+// Bun operations mock factory
+export function createMockBunOps(overrides: Partial<any> = {}) {
+  return {
+    file: actualMockBunFileFn,
+    write: actualMockBunWriteFn,
+    shell: mockShellOps,
+    ...overrides
+  };
+}
+
+// Memory-based transport for integration tests
+export class MemoryTransport implements Transport {
+  logs: string[] = [];
+
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    let output: string;
+    
+    if (options?.formatter) {
+      try {
+        const formatted = options.formatter(entry);
+        output = typeof formatted === 'string' ? formatted : JSON.stringify(formatted);
+      } catch (error) {
+        // Fall back to default formatting if custom formatter fails
+        output = this.getFormattedOutput(entry, options);
+      }
+    } else {
+      output = this.getFormattedOutput(entry, options);
+    }
+    
+    this.logs.push(output);
+  }
+
+  private getFormattedOutput(entry: LogEntry, options?: TransportOptions): string {
+    const format = options?.format || "string";
+    
+    if (format === "json") {
+      // Use JSON format similar to ConsoleTransport
+      const jsonEntry: Record<string, any> = {
+        timestamp: entry.timestamp,
+        level: entry.level,
+        levelName: entry.levelName,
+        message: entry.message
+      };
+      
+      if (entry.data && Object.keys(entry.data).length > 0) {
+        jsonEntry.data = entry.data;
+      }
+      
+      if (entry.args && entry.args.length > 0) {
+        jsonEntry.args = entry.args;
+      }
+      
+      return JSON.stringify(jsonEntry);
+    } else {
+      // Use string format - match the expected format from the tests
+      const parts = [
+        `[${entry.timestamp}]`,
+        `${entry.levelName}:`,
+        entry.message
+      ];
+      
+      if (entry.data && Object.keys(entry.data).length > 0) {
+        parts.push(JSON.stringify(entry.data));
+      }
+      
+      if (entry.args && entry.args.length > 0) {
+        parts.push(...entry.args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)));
+      }
+      
+      return parts.join(' ');
+    }
+  }
+
+  async flush(): Promise<void> {
+    // Memory transport doesn't need flushing, but return resolved promise for consistency
+    return Promise.resolve();
+  }
+
+  clear(): void {
+    this.logs = [];
+  }
+}
+
+// Helper to reset all mocks
+export function resetAllMocks() {
+  if ((actualMockBunFileFn as any).mockClear) {
+    (actualMockBunFileFn as any).mockClear();
+  }
+  if ((actualMockBunWriteFn as any).mockClear) {
+    (actualMockBunWriteFn as any).mockClear();
+  }
+  if (mockFileExists.mockClear) {
+    mockFileExists.mockClear();
+  }
+  if (mockFileText.mockClear) {
+    mockFileText.mockClear();
+  }
+  if (mockShellOps.mkdir.mockClear) {
+    mockShellOps.mkdir.mockClear();
+  }
+  if (mockShellOps.mv.mockClear) {
+    mockShellOps.mv.mockClear();
+  }
+  if (mockShellOps.rm.mockClear) {
+    mockShellOps.rm.mockClear();
+  }
+}
+
+// Helper to verify no real files were created
+export function verifyNoRealFiles() {
+  expect(actualMockBunWriteFn).not.toHaveBeenCalledWith(
+    expect.stringMatching(/\.log$/),
+    expect.anything()
+  );
+}
+
+// Global setup to prevent any accidental real file operations
+(globalThis as any).bunFileMock = actualMockBunFileFn;
+(globalThis as any).bunWriteMock = actualMockBunWriteFn;
+
+// Override any potential real Bun operations in test environment
+if (typeof Bun !== 'undefined') {
+  const originalFile = Bun.file;
+  const originalWrite = Bun.write;
+
+  // Store originals for potential restoration
+  (globalThis as any).__originalBunFile = originalFile;
+  (globalThis as any).__originalBunWrite = originalWrite;
+
+  // Replace with mocks during tests
+  Bun.file = actualMockBunFileFn as any;
+  Bun.write = actualMockBunWriteFn as any;
 }

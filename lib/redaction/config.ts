@@ -1,4 +1,4 @@
-/**
+  /**
  * Custom redaction function type for user-defined redaction logic.
  */
 export type CustomRedactor = (value: unknown, context: RedactionContext) => unknown;

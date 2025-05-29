@@ -1,7 +1,7 @@
 import { toAnsiColor } from '../utils/colors';
 import { getRedactedEntry } from '../redaction';
 import { LogLevel } from '../core/constants';
-import type { LogEntry, LoggerOptions, Transport } from '../core/types';
+import type { LogEntry, TransportOptions, Transport } from '../core/types';
 
 /**
  * ANSI color codes for console output with fallbacks.
@@ -27,32 +27,39 @@ export class ConsoleTransport implements Transport {
    * @param entry - The log entry to write
    * @param options - Logger options for formatting
    */
-  async log(entry: LogEntry, options: LoggerOptions): Promise<void> {
+  log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    // Ensure options is always an object for safe property access
+    const opts: TransportOptions = options ?? {};
+
     // Apply redaction specifically for console output
-    const redactedEntry = getRedactedEntry(entry, options.redaction, 'console');
-    
+    const redactedEntry = getRedactedEntry(
+      entry,
+      (opts as { redaction?: unknown }).redaction as import('../core/types').RedactionConfig | undefined,
+      'console'
+    );
+
     const consoleMethod =
       redactedEntry.level === LogLevel.ERROR || redactedEntry.level === LogLevel.FATAL ? console.error :
       redactedEntry.level === LogLevel.WARN ? console.warn :
       redactedEntry.level === LogLevel.DEBUG || redactedEntry.level === LogLevel.TRACE ? console.debug :
       console.info;
 
-    if (options.pluggableFormatter) {
+    if (opts.pluggableFormatter) {
       try {
-        const formatted = options.pluggableFormatter.format(redactedEntry);
+        const formatted = opts.pluggableFormatter.format(redactedEntry);
         consoleMethod(formatted);
-        return;
+        return Promise.resolve();
       } catch (error) {
         console.error('Pluggable formatter failed, falling back to default:', error instanceof Error ? error.message : String(error));
       }
     }
 
-    if (options.formatter) {
+    if (opts.formatter) {
       try {
-        const formatted = options.formatter(redactedEntry);
+        const formatted = opts.formatter(redactedEntry);
         const output = typeof formatted === 'string' ? formatted : JSON.stringify(formatted);
         consoleMethod(output);
-        return;
+        return Promise.resolve();
       } catch (error) {
         // Fallback to default formatting if custom formatter fails
         console.error('Custom formatter failed, falling back to default:', error instanceof Error ? error.message : String(error));
@@ -60,7 +67,7 @@ export class ConsoleTransport implements Transport {
       }
     }
 
-    if (options.format === 'json') {
+    if (opts.format === 'json') {
       // Safe JSON stringification with circular reference handling
       try {
         consoleMethod(JSON.stringify(redactedEntry));
@@ -93,12 +100,12 @@ export class ConsoleTransport implements Transport {
           }));
         }
       }
-      return;
+      return Promise.resolve();
     }
 
     // Merge and resolve colors with fallbacks
-    const mergedColorsInput = { ...consoleColors, ...(options.customConsoleColors || {}) };
-    
+    const mergedColorsInput = { ...consoleColors, ...(opts.customConsoleColors || {}) };
+
     const currentColors: {
       reset: string;
       bold: string;
@@ -190,12 +197,14 @@ export class ConsoleTransport implements Transport {
 
     const logString = `${timestampPart} ${levelPart} ${messagePart}${dataDisplay}${argsDisplay}`;
     consoleMethod(logString);
+    return Promise.resolve();
   }
 
   /**
    * Console transport doesn't need to flush anything.
    */
-  async flush(_options?: LoggerOptions): Promise<void> {
+  flush(_options?: TransportOptions): Promise<void> {
     // No-op for console
+    return Promise.resolve();
   }
 }

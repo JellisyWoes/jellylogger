@@ -1,10 +1,10 @@
-import type { BunFile } from 'bun';
 import { EOL as osEOL } from 'os';
 import { gzipSync } from 'bun';
 import { join, dirname, basename, extname } from 'path';
+import { existsSync, mkdirSync, appendFileSync, statSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'fs';
 import { getRedactedEntry } from '../redaction';
 import { LogLevel } from '../core/constants';
-import type { LogEntry, LoggerOptions, Transport } from '../core/types';
+import type { LogEntry, LoggerOptions, Transport, TransportOptions } from '../core/types';
 
 /**
  * Configuration for log rotation.
@@ -30,286 +30,140 @@ export interface ShellOperations {
 }
 
 /**
+ * Interface for file system operations used by FileTransport.
+ */
+export interface FileSystemOperations {
+  existsSync: typeof existsSync;
+  statSync: typeof statSync;
+  readFileSync: typeof readFileSync;
+  writeFileSync: typeof writeFileSync;
+  renameSync: typeof renameSync;
+  unlinkSync: typeof unlinkSync;
+}
+
+/**
  * Interface for Bun file operations used by FileTransport.
  * This allows for dependency injection for testing.
  */
 export interface InjectedBunFileOperations {
   file: typeof Bun.file;
   write: typeof Bun.write;
+  appendFileSync: typeof appendFileSync;
   shell?: ShellOperations;
+  fs?: FileSystemOperations;
 }
 
 /**
- * FileTransport writes log entries to a file using Bun streams with optional rotation.
+ * FileTransport writes log entries to a file using synchronous operations with optional rotation.
  */
 export class FileTransport implements Transport {
   private filePath: string;
   private bunFileOps: InjectedBunFileOperations;
-  private shell: ShellOperations;
-  private fileInstance: BunFile;
+  private fs: FileSystemOperations;
   private rotationConfig?: LogRotationConfig;
   private currentDate?: string;
   private isRotating: boolean = false;
   private rotationPromise: Promise<void> | null = null;
-  
-  // Stream-based writing
-  private writeStream: WritableStream<string>;
-  private writer: WritableStreamDefaultWriter<string>;
-  private flushTimer: Timer | null = null;
-  private isClosing: boolean = false;
-  private flushInterval: number;
-  private pendingClose: Promise<void> | null = null;
 
   /**
    * Creates a new FileTransport instance.
    * @param filePath - Path to the log file
    * @param rotationConfig - Optional log rotation configuration
    * @param bunOps - Optional Bun operations for dependency injection
-   * @param flushIntervalMs - Auto-flush interval in milliseconds. Default: 1000ms
    */
   constructor(
     filePath: string, 
     rotationConfig?: LogRotationConfig,
-    bunOps?: Partial<InjectedBunFileOperations>,
-    flushIntervalMs: number = 1000
+    bunOps?: Partial<InjectedBunFileOperations>
   ) {
     this.filePath = filePath;
     this.rotationConfig = rotationConfig;
-    this.flushInterval = flushIntervalMs;
     this.bunFileOps = {
       file: bunOps?.file || Bun.file,
       write: bunOps?.write || Bun.write,
+      appendFileSync: bunOps?.appendFileSync || appendFileSync,
       shell: bunOps?.shell,
+      fs: bunOps?.fs,
     };
     
-    // Set up shell operations - use injected shell or default to Bun.$
-    this.shell = this.bunFileOps.shell || {
-      mkdir: async (path: string) => {
-        const result = await Bun.$`mkdir -p ${path}`.quiet();
-        return { exitCode: result.exitCode };
-      },
-      mv: async (source: string, dest: string) => {
-        const result = await Bun.$`mv ${source} ${dest}`.quiet();
-        return { exitCode: result.exitCode };
-      },
-      rm: async (path: string) => {
-        const result = await Bun.$`rm -f ${path}`.quiet();
-        return { exitCode: result.exitCode };
-      }
+    // Set up file system operations - use injected fs or default to Node.js fs
+    this.fs = this.bunFileOps.fs || {
+      existsSync,
+      statSync,
+      readFileSync,
+      writeFileSync,
+      renameSync,
+      unlinkSync,
     };
     
-    this.fileInstance = this.bunFileOps.file(this.filePath);
-    
+    // Removed this.shell assignment and use only local variable if needed
     if (rotationConfig?.dateRotation) {
       this.currentDate = new Date().toISOString().split('T')[0];
     }
 
-    // Initialize stream and writer
-    this.writeStream = this.createWriteStream();
-    this.writer = this.writeStream.getWriter();
-
-    // Ensure the directory exists
-    this.ensureDirectoryExists();
-    
-    // Setup automatic flushing
-    this.setupAutoFlush();
-    
-    // Setup graceful shutdown handlers
-    this.setupGracefulShutdown();
+    // Ensure the directory exists synchronously
+    this.ensureDirectoryExistsSync();
   }
 
   /**
-   * Creates a WritableStream for file operations
+   * Ensure the log directory exists synchronously
    */
-  private createWriteStream(): WritableStream<string> {
-    return new WritableStream<string>({
-      write: async (chunk: string): Promise<void> => {
-        try {
-          // Wait for any ongoing rotation to complete
-          if (this.rotationPromise) {
-            await this.rotationPromise;
-          }
-          
-          // Use append mode for writing
-          await this.bunFileOps.write(this.fileInstance, chunk);
-        } catch (error) {
-          console.error(`FileTransport stream write error:`, error);
-          // Don't rethrow - this would close the stream and prevent further writes
-          // Just log the error and continue
-        }
-      },
-      
-      close: async (): Promise<void> => {
-        // Cleanup on stream close
-        this.clearAutoFlush();
-        
-        // Wait for any pending rotation
-        if (this.rotationPromise) {
-          try {
-            await this.rotationPromise;
-          } catch (error) {
-            console.error('Error during stream close rotation wait:', error);
-          }
-        }
-      },
-      
-      abort: async (reason?: any): Promise<void> => {
-        console.warn('FileTransport stream aborted:', reason);
-        this.clearAutoFlush();
-      }
-    });
-  }
-
-  /**
-   * Setup automatic flushing every flushInterval milliseconds
-   */
-  private setupAutoFlush(): void {
-    if (this.flushInterval > 0) {
-      this.flushTimer = setInterval(() => {
-        if (!this.isClosing) {
-          this.performFlush().catch(error => {
-            console.error('Auto-flush error:', error);
-          });
-        }
-      }, this.flushInterval);
-    }
-  }
-
-  /**
-   * Clear the auto-flush timer
-   */
-  private clearAutoFlush(): void {
-    if (this.flushTimer) {
-      clearInterval(this.flushTimer);
-      this.flushTimer = null;
-    }
-  }
-
-  /**
-   * Setup graceful shutdown handlers for process exit scenarios
-   */
-  private setupGracefulShutdown(): void {
-    const shutdownHandler = async () => {
-      if (!this.isClosing) {
-        await this.performGracefulClose();
-      }
-    };
-
-    // Handle various exit scenarios
-    process.on('SIGINT', shutdownHandler);
-    process.on('SIGTERM', shutdownHandler);
-    process.on('beforeExit', shutdownHandler);
-    
-    // Handle uncaught exceptions and unhandled rejections
-    process.on('uncaughtException', async (error) => {
-      console.error('Uncaught exception, flushing logs:', error);
-      await shutdownHandler();
-    });
-    
-    process.on('unhandledRejection', async (reason) => {
-      console.error('Unhandled rejection, flushing logs:', reason);
-      await shutdownHandler();
-    });
-  }
-
-  /**
-   * Perform graceful close of the stream
-   */
-  private async performGracefulClose(): Promise<void> {
-    if (this.pendingClose) {
-      return this.pendingClose;
-    }
-
-    this.pendingClose = this._performGracefulClose();
-    return this.pendingClose;
-  }
-
-  private async _performGracefulClose(): Promise<void> {
-    this.isClosing = true;
-    this.clearAutoFlush();
-
-    try {
-      // Release the writer lock and close the stream
-      await this.writer.close();
-    } catch (error) {
-      console.error('Error closing FileTransport stream:', error);
-    }
-  }
-
-  /**
-   * Perform flush operation
-   */
-  private async performFlush(): Promise<void> {
-    try {
-      // WritableStream automatically handles buffering and flushing
-      // This method exists for compatibility but stream handles it internally
-      await this.writer.ready;
-    } catch (error) {
-      // Log error but don't rethrow to prevent test failures
-      // The stream already handles write errors appropriately
-      // console.error('Error during flush:', error);
-    }
-  }
-
-  /**
-   * Ensure the log directory exists
-   */
-  private async ensureDirectoryExists(): Promise<void> {
+  private ensureDirectoryExistsSync(): void {
     try {
       const dir = dirname(this.filePath);
-      await this.shell.mkdir(dir);
+      if (!this.fs.existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
     } catch (error) {
       console.warn('Failed to create log directory:', error);
     }
   }
 
   /**
-   * Logs an entry to the file using stream-based writing.
+   * Logs an entry to the file using completely synchronous operations.
    * @param entry - The log entry to write
-   * @param options - Logger options for formatting
+   * @param options - Transport options for formatting
    */
-  async log(entry: LogEntry, options: LoggerOptions): Promise<void> {
-    if (this.isClosing) {
-      console.warn('Attempted to log to closed FileTransport');
-      return;
-    }
-
+  log(entry: LogEntry, options?: TransportOptions): Promise<void> {
     try {
-      // Apply redaction specifically for file output
-      const redactedEntry = getRedactedEntry(entry, options.redaction, 'file');
+      // Convert TransportOptions to LoggerOptions for internal use
+      const loggerOptions: LoggerOptions = options || {} as LoggerOptions;
       
-      // Check for date-based rotation before writing
+      // Apply redaction specifically for file output
+      const redactedEntry = getRedactedEntry(entry, loggerOptions.redaction, 'file');
+      
+      // Check for date-based rotation before writing (async in background)
       if (this.rotationConfig?.dateRotation) {
         const currentDate = new Date().toISOString().split('T')[0];
         if (this.currentDate !== currentDate) {
-          try {
+          // Schedule rotation in background without blocking
+          if (!this.rotationPromise) {
             this.rotationPromise = this.rotateLogs();
-            await this.rotationPromise;
-            this.currentDate = currentDate;
-            this.rotationPromise = null;
-          } catch (error) {
-            console.error('FileTransport date rotation error:', error);
-            this.rotationPromise = null;
-            // Continue with logging even if rotation fails
+            this.rotationPromise.finally(() => {
+              this.currentDate = currentDate;
+              this.rotationPromise = null;
+            }).catch(error => {
+              console.error('FileTransport date rotation error:', error);
+            });
           }
         }
       }
 
       // Format the log string
       let logString: string;
-      if (options.pluggableFormatter) {
-        const formatted = options.pluggableFormatter.format(redactedEntry);
+      if (loggerOptions.pluggableFormatter) {
+        const formatted = loggerOptions.pluggableFormatter.format(redactedEntry);
         logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
-      } else if (options.formatter) {
+      } else if (loggerOptions.formatter) {
         try {
-          const formatted = options.formatter(redactedEntry);
+          const formatted = loggerOptions.formatter(redactedEntry);
           logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
         } catch (error) {
           // Fallback to default formatting if custom formatter fails
           console.error('Custom formatter failed in FileTransport, using default:', error instanceof Error ? error.message : String(error));
           logString = this.getDefaultLogString(redactedEntry);
         }
-      } else if (options.format === 'json') {
+      } else if (loggerOptions.format === 'json') {
         try {
           logString = JSON.stringify(redactedEntry) + osEOL;
         } catch (e) {
@@ -359,27 +213,37 @@ export class FileTransport implements Transport {
         logString = this.getDefaultLogString(redactedEntry);
       }
 
-      // Write to stream (automatically handles buffering and backpressure)
-      await this.writer.write(logString);
+      // Write synchronously to ensure proper ordering
+      try {
+        this.bunFileOps.appendFileSync(this.filePath, logString);
+      } catch (error) {
+        console.error('FileTransport write error:', error);
+        return Promise.resolve();
+      }
       
-      // Check for size-based rotation after successful write
+      // Schedule size-based rotation check (don't block or await)
+      // Removed setTimeout for better test determinism
       if (this.rotationConfig?.maxFileSize && !this.rotationPromise) {
         try {
-          const fileSize = this.fileInstance.size;
-          if (typeof fileSize === 'number' && fileSize > this.rotationConfig.maxFileSize) {
+          // Use fs.statSync for size checking to allow proper mocking in tests
+          const stats = this.fs.statSync(this.filePath);
+          if (stats.size > this.rotationConfig!.maxFileSize!) {
             this.rotationPromise = this.rotateLogs();
-            // Don't await here to avoid blocking subsequent writes
             this.rotationPromise.finally(() => {
               this.rotationPromise = null;
+            }).catch(error => {
+              console.error('FileTransport size rotation error:', error);
             });
           }
         } catch (error) {
           console.error('FileTransport size check error:', error);
         }
       }
+
+      return Promise.resolve();
     } catch (error) {
       console.error('FileTransport log error:', error);
-      // Don't throw - we want logging to continue even if file transport fails
+      return Promise.resolve();
     }
   }
 
@@ -426,14 +290,11 @@ export class FileTransport implements Transport {
     this.isRotating = true;
     
     try {
-      // Flush any pending writes before rotation
-      await this.performFlush();
-      
       const maxFiles = this.rotationConfig.maxFiles ?? 5;
       const compress = this.rotationConfig.compress ?? true;
       
       // Check if current file exists
-      const currentFileExists = await this.fileInstance.exists().catch(() => false);
+      const currentFileExists = this.fs.existsSync(this.filePath);
       if (!currentFileExists) {
         return;
       }
@@ -449,12 +310,11 @@ export class FileTransport implements Transport {
             ? join(dir, `${name}.${i}${ext}.gz`)
             : join(dir, `${name}.${i}${ext}`);
           
-          const oldFileInstance = this.bunFileOps.file(oldFile);
-          const exists = await oldFileInstance.exists().catch(() => false);
+          const exists = this.fs.existsSync(oldFile);
           
           if (exists) {
             try {
-              await this.shell.rm(oldFile);
+              this.fs.unlinkSync(oldFile);
             } catch (e) {
               console.warn(`Failed to delete old log file ${oldFile}:`, e);
             }
@@ -467,15 +327,14 @@ export class FileTransport implements Transport {
             ? join(dir, `${name}.${i}${ext}.gz`)
             : join(dir, `${name}.${i}${ext}`);
           
-          const currentFileInstance = this.bunFileOps.file(currentFile);
-          const exists = await currentFileInstance.exists().catch(() => false);
+          const exists = this.fs.existsSync(currentFile);
           
           if (exists) {
             const nextFile = compress
               ? join(dir, `${name}.${i + 1}${ext}.gz`)
               : join(dir, `${name}.${i + 1}${ext}`);
             try {
-              await this.shell.mv(currentFile, nextFile);
+              this.fs.renameSync(currentFile, nextFile);
             } catch (e) {
               console.warn(`Failed to move log file ${currentFile} to ${nextFile}:`, e);
             }
@@ -490,44 +349,34 @@ export class FileTransport implements Transport {
         if (compress) {
           // Read, compress, and write
           try {
-            const content = await this.fileInstance.text();
+            const content = this.fs.readFileSync(this.filePath, 'utf8');
             const compressed = gzipSync(Buffer.from(content));
-            await this.bunFileOps.write(rotatedFile, compressed);
+            this.fs.writeFileSync(rotatedFile, compressed);
             // Remove original file after successful compression
-            await this.shell.rm(this.filePath);
+            this.fs.unlinkSync(this.filePath);
           } catch (e) {
             console.error(`Failed to compress and rotate log file:`, e);
             // Continue with normal rotation if compression fails
             try {
-              await this.shell.mv(this.filePath, rotatedFile);
+              this.fs.renameSync(this.filePath, rotatedFile);
             } catch (moveError) {
               console.error(`Failed to move log file during rotation fallback:`, moveError);
             }
           }
         } else {
           try {
-            await this.shell.mv(this.filePath, rotatedFile);
+            this.fs.renameSync(this.filePath, rotatedFile);
           } catch (e) {
             console.error(`Failed to move log file during rotation:`, e);
           }
         }
 
-        // Create new file instance and recreate stream
-        this.fileInstance = this.bunFileOps.file(this.filePath);
-        
-        // Close existing writer and create new stream
-        try {
-          await this.writer.close();
-        } catch (e) {
-          console.warn('Error closing writer during rotation:', e);
-        }
-        
-        this.writeStream = this.createWriteStream();
-        this.writer = this.writeStream.getWriter();
+        // Create new file instance
+        // Removed: this.fileInstance = this.bunFileOps.file(this.filePath);
       } catch (error) {
         console.error('Critical error during log rotation:', error);
         // Try to continue with a new file instance even if rotation failed
-        this.fileInstance = this.bunFileOps.file(this.filePath);
+        // Removed: this.fileInstance = this.bunFileOps.file(this.filePath);
       }
     } finally {
       this.isRotating = false;
@@ -535,31 +384,16 @@ export class FileTransport implements Transport {
   }
 
   /**
-   * Flush any pending writes. Stream-based implementation handles this automatically.
+   * Flush any pending writes.
    */
-  async flush(_options?: LoggerOptions): Promise<void> {
-    if (this.isClosing) {
-      return;
+  flush(_options?: TransportOptions): Promise<void> {
+    // Since we're using synchronous writes, there's nothing to flush
+    // Just wait for any ongoing rotation to complete
+    if (this.rotationPromise) {
+      return this.rotationPromise.catch(() => {
+        // Ignore rotation errors during flush
+      });
     }
-
-    try {
-      // Wait for any ongoing rotation to complete
-      if (this.rotationPromise) {
-        try {
-          await this.rotationPromise;
-        } catch (error) {
-          console.error('Error during rotation flush:', error);
-        }
-      }
-
-      // Ensure writer is ready (all pending writes completed)
-      await this.writer.ready;
-      
-      // Perform explicit flush
-      await this.performFlush();
-    } catch (error) {
-      console.error('FileTransport flush error:', error);
-      // Don't throw - we want the application to continue even if flush fails
-    }
+    return Promise.resolve();
   }
 }

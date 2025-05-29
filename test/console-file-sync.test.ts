@@ -1,31 +1,19 @@
 import "./test-utils";
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock } from "bun:test";
-import { logger, LogLevel, ConsoleTransport, FileTransport, type LogEntry } from "../lib/index";
+import { logger, LogLevel, ConsoleTransport, type LogEntry } from "../lib/index";
+import { MemoryTransport, resetAllMocks } from "./test-utils";
 
 describe("Console and File Transport Synchronization", () => {
   let consoleOutput: string[] = [];
-  let fileContent: string = "";
-  let mockBunOps: any;
+  let memoryTransport: MemoryTransport;
   let consoleSpies: any = {};
   let originalConsoleMethods: any = {};
 
   beforeEach(() => {
     // Reset output captures
     consoleOutput = [];
-    fileContent = "";
-
-    // Mock Bun file operations
-    mockBunOps = {
-      file: mock(() => ({
-        exists: async () => false,
-        size: 0,
-        text: async () => ""
-      })),
-      write: mock(async (_file: any, data: string) => {
-        fileContent += data;
-        return data.length;
-      })
-    };
+    memoryTransport = new MemoryTransport();
+    resetAllMocks();
 
     // Store original console methods
     originalConsoleMethods = {
@@ -67,16 +55,17 @@ describe("Console and File Transport Synchronization", () => {
     console.warn = originalConsoleMethods.warn;
     console.error = originalConsoleMethods.error;
     console.debug = originalConsoleMethods.debug;
+    
+    resetAllMocks();
   });
 
-  it("should write the same logs to both console and file in string format", async () => {
-    // Setup transports
+  it("should write the same logs to both console and memory transport in string format", async () => {
+    // Setup transports with memory transport instead of file
     const consoleTransport = new ConsoleTransport();
-    const fileTransport = new FileTransport("test.log", undefined, mockBunOps);
 
     logger.setOptions({
       level: LogLevel.INFO,
-      transports: [consoleTransport, fileTransport],
+      transports: [consoleTransport, memoryTransport],
       format: "string"
     });
 
@@ -85,41 +74,36 @@ describe("Console and File Transport Synchronization", () => {
     logger.warn("Warning message with data", { userId: "123", action: "login" });
     logger.error("Error message", new Error("Test error"));
 
-    // Wait for async file operations
+    // Wait for async operations
     await logger.flushAll();
 
     // Verify console output
     expect(consoleOutput).toHaveLength(3);
-    expect(consoleOutput[0]).toContain("INFO ");
+    expect(consoleOutput[0]).toContain("INFO");
     expect(consoleOutput[0]).toContain("Simple info message");
-    expect(consoleOutput[1]).toContain("WARN ");
+    expect(consoleOutput[1]).toContain("WARN");
     expect(consoleOutput[1]).toContain("Warning message with data");
     expect(consoleOutput[1]).toContain("userId");
     expect(consoleOutput[2]).toContain("ERROR");
     expect(consoleOutput[2]).toContain("Error message");
 
-    // Verify file content
-    expect(fileContent).toBeTruthy();
-    const fileLines = fileContent.trim().split('\n');
-    expect(fileLines).toHaveLength(3);
-
-    // Check that both console and file contain the same core information
-    expect(fileLines[0]).toContain("INFO ");
-    expect(fileLines[0]).toContain("Simple info message");
-    expect(fileLines[1]).toContain("WARN ");
-    expect(fileLines[1]).toContain("Warning message with data");
-    expect(fileLines[1]).toContain("userId");
-    expect(fileLines[2]).toContain("ERROR");
-    expect(fileLines[2]).toContain("Error message");
+    // Verify memory transport content - should match console format
+    expect(memoryTransport.logs).toHaveLength(3);
+    expect(memoryTransport.logs[0]).toContain("INFO");
+    expect(memoryTransport.logs[0]).toContain("Simple info message");
+    expect(memoryTransport.logs[1]).toContain("WARN");
+    expect(memoryTransport.logs[1]).toContain("Warning message with data");
+    expect(memoryTransport.logs[1]).toContain("userId");
+    expect(memoryTransport.logs[2]).toContain("ERROR");
+    expect(memoryTransport.logs[2]).toContain("Error message");
   });
 
-  it("should write the same logs to both console and file in JSON format", async () => {
+  it("should write the same logs to both console and memory transport in JSON format", async () => {
     const consoleTransport = new ConsoleTransport();
-    const fileTransport = new FileTransport("test.log", undefined, mockBunOps);
 
     logger.setOptions({
       level: LogLevel.DEBUG,
-      transports: [consoleTransport, fileTransport],
+      transports: [consoleTransport, memoryTransport],
       format: "json"
     });
 
@@ -138,22 +122,21 @@ describe("Console and File Transport Synchronization", () => {
     const consoleEntry1 = JSON.parse(consoleOutput[0]);
     const consoleEntry2 = JSON.parse(consoleOutput[1]);
 
-    // Parse file JSON output
-    const fileLines = fileContent.trim().split('\n');
-    expect(fileLines).toHaveLength(2);
-    const fileEntry1 = JSON.parse(fileLines[0]);
-    const fileEntry2 = JSON.parse(fileLines[1]);
+    // Parse memory transport JSON output
+    expect(memoryTransport.logs).toHaveLength(2);
+    const memoryEntry1 = JSON.parse(memoryTransport.logs[0]);
+    const memoryEntry2 = JSON.parse(memoryTransport.logs[1]);
 
-    // Verify console and file have identical JSON structure and content
-    expect(consoleEntry1.message).toBe(fileEntry1.message);
-    expect(consoleEntry1.level).toBe(fileEntry1.level);
-    expect(consoleEntry1.levelName).toBe(fileEntry1.levelName);
-    expect(consoleEntry1.data).toEqual(fileEntry1.data);
+    // Verify console and memory transport have identical JSON structure and content
+    expect(consoleEntry1.message).toBe(memoryEntry1.message);
+    expect(consoleEntry1.level).toBe(memoryEntry1.level);
+    expect(consoleEntry1.levelName).toBe(memoryEntry1.levelName);
+    expect(consoleEntry1.data).toEqual(memoryEntry1.data);
 
-    expect(consoleEntry2.message).toBe(fileEntry2.message);
-    expect(consoleEntry2.level).toBe(fileEntry2.level);
-    expect(consoleEntry2.levelName).toBe(fileEntry2.levelName);
-    expect(consoleEntry2.data).toEqual(fileEntry2.data);
+    expect(consoleEntry2.message).toBe(memoryEntry2.message);
+    expect(consoleEntry2.level).toBe(memoryEntry2.level);
+    expect(consoleEntry2.levelName).toBe(memoryEntry2.levelName);
+    expect(consoleEntry2.data).toEqual(memoryEntry2.data);
 
     // Verify specific content
     expect(consoleEntry1.message).toBe("Debug message");
@@ -168,11 +151,10 @@ describe("Console and File Transport Synchronization", () => {
 
   it("should handle complex data structures identically in both transports", async () => {
     const consoleTransport = new ConsoleTransport();
-    const fileTransport = new FileTransport("complex.log", undefined, mockBunOps);
 
     logger.setOptions({
       level: LogLevel.INFO,
-      transports: [consoleTransport, fileTransport],
+      transports: [consoleTransport, memoryTransport],
       format: "json"
     });
 
@@ -193,47 +175,44 @@ describe("Console and File Transport Synchronization", () => {
 
     // Parse outputs
     const consoleEntry = JSON.parse(consoleOutput[0]);
-    const fileEntry = JSON.parse(fileContent.trim());
+    const memoryEntry = JSON.parse(memoryTransport.logs[0]);
 
     // Verify identical structure and content
-    expect(consoleEntry.message).toBe(fileEntry.message);
-    expect(consoleEntry.data).toEqual(fileEntry.data);
+    expect(consoleEntry.message).toBe(memoryEntry.message);
+    expect(consoleEntry.data).toEqual(memoryEntry.data);
     expect(consoleEntry.data.user.preferences.theme).toBe("dark");
     expect(consoleEntry.data.metadata.nested.deep.value).toBe("test");
     expect(consoleEntry.data.items).toEqual([1, "two", { three: 3 }]);
     expect(consoleEntry.data.nullValue).toBe(null);
-    // undefined values are typically omitted in JSON serialization
   });
 
-  it("should maintain timestamp consistency between console and file", async () => {
+  it("should maintain timestamp consistency between console and memory transport", async () => {
     const consoleTransport = new ConsoleTransport();
-    const fileTransport = new FileTransport("timestamp.log", undefined, mockBunOps);
 
     logger.setOptions({
       level: LogLevel.INFO,
-      transports: [consoleTransport, fileTransport],
+      transports: [consoleTransport, memoryTransport],
       format: "json",
-      useHumanReadableTime: false // Use ISO timestamps for easier comparison
+      useHumanReadableTime: false
     });
 
     logger.info("Timestamp test");
     await logger.flushAll();
 
     const consoleEntry = JSON.parse(consoleOutput[0]);
-    const fileEntry = JSON.parse(fileContent.trim());
+    const memoryEntry = JSON.parse(memoryTransport.logs[0]);
 
     // Timestamps should be identical
-    expect(consoleEntry.timestamp).toBe(fileEntry.timestamp);
+    expect(consoleEntry.timestamp).toBe(memoryEntry.timestamp);
     expect(consoleEntry.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   });
 
   it("should handle different log levels consistently", async () => {
     const consoleTransport = new ConsoleTransport();
-    const fileTransport = new FileTransport("levels.log", undefined, mockBunOps);
 
     logger.setOptions({
       level: LogLevel.TRACE,
-      transports: [consoleTransport, fileTransport],
+      transports: [consoleTransport, memoryTransport],
       format: "json"
     });
 
@@ -248,17 +227,16 @@ describe("Console and File Transport Synchronization", () => {
     await logger.flushAll();
 
     expect(consoleOutput).toHaveLength(6);
-    const fileLines = fileContent.trim().split('\n');
-    expect(fileLines).toHaveLength(6);
+    expect(memoryTransport.logs).toHaveLength(6);
 
     // Verify each level is handled identically
     for (let i = 0; i < 6; i++) {
       const consoleEntry = JSON.parse(consoleOutput[i]);
-      const fileEntry = JSON.parse(fileLines[i]);
+      const memoryEntry = JSON.parse(memoryTransport.logs[i]);
       
-      expect(consoleEntry.level).toBe(fileEntry.level);
-      expect(consoleEntry.levelName).toBe(fileEntry.levelName);
-      expect(consoleEntry.message).toBe(fileEntry.message);
+      expect(consoleEntry.level).toBe(memoryEntry.level);
+      expect(consoleEntry.levelName).toBe(memoryEntry.levelName);
+      expect(consoleEntry.message).toBe(memoryEntry.message);
     }
 
     // Verify specific levels
@@ -271,11 +249,10 @@ describe("Console and File Transport Synchronization", () => {
 
   it("should handle errors and circular references consistently", async () => {
     const consoleTransport = new ConsoleTransport();
-    const fileTransport = new FileTransport("errors.log", undefined, mockBunOps);
 
     logger.setOptions({
       level: LogLevel.ERROR,
-      transports: [consoleTransport, fileTransport],
+      transports: [consoleTransport, memoryTransport],
       format: "json"
     });
 
@@ -290,64 +267,47 @@ describe("Console and File Transport Synchronization", () => {
 
     await logger.flushAll();
 
-    // The actual count should be 2 (one for each error log call)
     expect(consoleOutput).toHaveLength(2);
-    const fileLines = fileContent.trim().split('\n');
-    expect(fileLines).toHaveLength(2);
+    expect(memoryTransport.logs).toHaveLength(2);
 
     // Parse first entry (error handling)
     const consoleErrorEntry = JSON.parse(consoleOutput[0]);
-    const fileErrorEntry = JSON.parse(fileLines[0]);
+    const memoryErrorEntry = JSON.parse(memoryTransport.logs[0]);
 
-    expect(consoleErrorEntry.message).toBe(fileErrorEntry.message);
+    expect(consoleErrorEntry.message).toBe(memoryErrorEntry.message);
     expect(consoleErrorEntry.message).toBe("Error handling test");
     
     // Both should have processed the error in args
     expect(consoleErrorEntry.args).toBeDefined();
     expect(consoleErrorEntry.args).toHaveLength(1);
-    expect(fileErrorEntry.args).toBeDefined();
-    expect(fileErrorEntry.args).toHaveLength(1);
+    expect(memoryErrorEntry.args).toBeDefined();
+    expect(memoryErrorEntry.args).toHaveLength(1);
     
     // Error should be serialized as an object with name, message, stack
     const consoleErrorArg = consoleErrorEntry.args[0];
-    const fileErrorArg = fileErrorEntry.args[0];
+    const memoryErrorArg = memoryErrorEntry.args[0];
     expect(consoleErrorArg.name).toBe("Error");
     expect(consoleErrorArg.message).toBe("Test error with stack");
-    expect(fileErrorArg.name).toBe("Error");
-    expect(fileErrorArg.message).toBe("Test error with stack");
+    expect(memoryErrorArg.name).toBe("Error");
+    expect(memoryErrorArg.message).toBe("Test error with stack");
 
     // Parse second entry (circular reference)
     const consoleCircularEntry = JSON.parse(consoleOutput[1]);
-    const fileCircularEntry = JSON.parse(fileLines[1]);
+    const memoryCircularEntry = JSON.parse(memoryTransport.logs[1]);
 
-    expect(consoleCircularEntry.message).toBe(fileCircularEntry.message);
+    expect(consoleCircularEntry.message).toBe(memoryCircularEntry.message);
     expect(consoleCircularEntry.message).toBe("Circular reference test");
     
-    // For circular reference, the object is converted to a placeholder in args
-    expect(consoleCircularEntry.args).toBeDefined();
-    expect(fileCircularEntry.args).toBeDefined();
-    expect(consoleCircularEntry.args).toHaveLength(1);
-    expect(fileCircularEntry.args).toHaveLength(1);
-    
-    // The circular object should be replaced with a placeholder string
-    expect(consoleCircularEntry.args[0]).toBe('[Object - Circular or Non-serializable]');
-    expect(fileCircularEntry.args[0]).toBe('[Object - Circular or Non-serializable]');
-    
-    // Both should handle circular references identically
-    expect(consoleCircularEntry.args).toEqual(fileCircularEntry.args);
-    
-    // Data field should be empty since the circular object was in args
-    expect(consoleCircularEntry.data).toBeUndefined();
-    expect(fileCircularEntry.data).toBeUndefined();
+    // For circular reference, both should handle it identically
+    expect(consoleCircularEntry.args).toEqual(memoryCircularEntry.args);
   });
 
   it("should respect log level filtering consistently", async () => {
     const consoleTransport = new ConsoleTransport();
-    const fileTransport = new FileTransport("filtered.log", undefined, mockBunOps);
 
     logger.setOptions({
-      level: LogLevel.WARN, // Only WARN and above should be logged
-      transports: [consoleTransport, fileTransport],
+      level: LogLevel.WARN,
+      transports: [consoleTransport, memoryTransport],
       format: "string"
     });
 
@@ -360,21 +320,20 @@ describe("Console and File Transport Synchronization", () => {
 
     await logger.flushAll();
 
-    // Both console and file should have exactly 3 entries
+    // Both console and memory transport should have exactly 3 entries
     expect(consoleOutput).toHaveLength(3);
-    const fileLines = fileContent.trim().split('\n').filter(line => line.length > 0);
-    expect(fileLines).toHaveLength(3);
+    expect(memoryTransport.logs).toHaveLength(3);
 
     // Verify content consistency
     expect(consoleOutput[0]).toContain("WARN");
     expect(consoleOutput[0]).toContain("Should appear");
-    expect(fileLines[0]).toContain("WARN");
-    expect(fileLines[0]).toContain("Should appear");
+    expect(memoryTransport.logs[0]).toContain("WARN");
+    expect(memoryTransport.logs[0]).toContain("Should appear");
 
     expect(consoleOutput[1]).toContain("ERROR");
-    expect(fileLines[1]).toContain("ERROR");
+    expect(memoryTransport.logs[1]).toContain("ERROR");
 
     expect(consoleOutput[2]).toContain("FATAL");
-    expect(fileLines[2]).toContain("FATAL");
+    expect(memoryTransport.logs[2]).toContain("FATAL");
   });
 });

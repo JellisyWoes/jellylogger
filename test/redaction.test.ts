@@ -1,6 +1,7 @@
 import "./test-utils"; // Import mocks first
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock } from "bun:test";
 import { logger, LogLevel, ConsoleTransport, FileTransport, type LogEntry } from "../lib/index";
+import { actualMockBunFileFn, actualMockBunWriteFn } from "./test-utils";
 
 describe("Redaction", () => {
   let consoleSpy: any;
@@ -28,7 +29,8 @@ describe("Redaction", () => {
         replacement: "[SECRET]",
         redactIn: "console",
       },
-      transports: [consoleTransport],
+      // Explicitly type transports as any to satisfy the Transport type constraint for test purposes
+      transports: [consoleTransport as any],
       level: LogLevel.INFO
     });
 
@@ -105,21 +107,20 @@ describe("Redaction", () => {
   });
 
   it("should redact for file transport when redactIn is 'file'", async () => {
-    // Mock Bun operations for FileTransport
+    // Mock Node.js fs operations for FileTransport to prevent real file creation
+    const fs = require("fs");
+    const appendFileSyncSpy = spyOn(fs, "appendFileSync").mockImplementation(() => {});
+
     let writtenContent = "";
-    const bunOps = {
-      file: mock(() => ({
-        exists: async () => false,
-        size: 0
-      } as any)),
-      write: mock(async (_file, data) => { 
-        writtenContent = data as string;
-        return 1; 
-      }),
-    };
-    
-    const fileTransport = new FileTransport("test.log", undefined, bunOps);
-    
+    // Capture content from appendFileSync since FileTransport uses append for logging
+    appendFileSyncSpy.mockImplementation((_path: string, data: string) => { 
+      writtenContent += data; 
+    });
+
+    const fileTransport = new FileTransport("test.log", undefined, {
+      appendFileSync: fs.appendFileSync
+    });
+
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
       level: LogLevel.INFO,
@@ -128,7 +129,7 @@ describe("Redaction", () => {
       args: [],
       data: { secret: "should-be-redacted" }
     };
-    
+
     await fileTransport.log(entry, {
       redaction: {
         keys: ["secret"],
@@ -138,11 +139,21 @@ describe("Redaction", () => {
       format: "json"
     });
 
-    // Wait for the write to complete if needed (simulate flush)
     await fileTransport.flush();
 
-    const loggedData = JSON.parse(writtenContent.trim());
+    // Defensive: ensure writtenContent is not empty and valid JSON
+    expect(typeof writtenContent).toBe("string");
+    expect(writtenContent.trim().length).toBeGreaterThan(0);
+    let loggedData: any;
+    try {
+      loggedData = JSON.parse(writtenContent.trim());
+    } catch (e) {
+      throw new Error(`FileTransport wrote invalid JSON: ${writtenContent}`);
+    }
     expect(loggedData.data.secret).toBe("[REDACTED]");
+
+    // Restore fs mocks
+    appendFileSyncSpy.mockRestore();
   });
 
   it("should redact for both console and file when redactIn is 'both'", () => {

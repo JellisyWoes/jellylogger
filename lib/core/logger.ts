@@ -128,7 +128,7 @@ export class ChildLogger implements BaseLogger {
 export const defaultOptions: LoggerOptions = {
   level: LogLevel.INFO,
   useHumanReadableTime: false,
-  transports: [new ConsoleTransport()],
+  transports: [new ConsoleTransport()], // Default to ConsoleTransport
   format: 'string',
   customConsoleColors: {},
 };
@@ -140,7 +140,12 @@ export const logger: JellyLogger = {
   options: { ...defaultOptions },
 
   setOptions(newOptions: LoggerOptions): void {
-    this.options = { ...this.options, ...newOptions };
+    // If user provides transports, override the default entirely
+    if (newOptions.transports) {
+      this.options = { ...this.options, ...newOptions, transports: newOptions.transports };
+    } else {
+      this.options = { ...this.options, ...newOptions };
+    }
     if (newOptions.customConsoleColors) {
       this.options.customConsoleColors = {
         ...(this.options.customConsoleColors || {}),
@@ -224,10 +229,14 @@ export const logger: JellyLogger = {
     const transports = this.options.transports ?? [];
     for (const transport of transports) {
       try {
-        const logPromise = Promise.resolve(transport.log(entry, this.options));
-        logPromise.catch(error => {
-          console.error(`Error in transport '${transport.constructor.name}':`, error);
-        });
+        // Pass only the options relevant for the transport
+        const result = transport.log(entry, this.options as any); // Cast to any to allow LoggerOptions as TransportOptions
+        // Only handle as promise if it actually returns a promise
+        if (result && typeof result.then === 'function') {
+          result.catch(error => {
+            console.error(`Error in transport '${transport.constructor.name}':`, error);
+          });
+        }
       } catch (error) {
         console.error(`Synchronous error in transport '${transport.constructor.name}':`, error);
       }
@@ -236,10 +245,12 @@ export const logger: JellyLogger = {
     if (shouldSendToDiscord && this.options.discordWebhookUrl) {
       try {
         const discordTransport = getDiscordTransport(this.options.discordWebhookUrl);
-        const logPromise = Promise.resolve(discordTransport.log(entry, this.options));
-        logPromise.catch(error => {
-          console.error('Error in Discord transport:', error);
-        });
+        const result = discordTransport.log(entry, this.options as any); // Cast to any for compatibility
+        if (result && typeof result.then === 'function') {
+          result.catch(error => {
+            console.error('Error in Discord transport:', error);
+          });
+        }
       } catch (error) {
         console.error('Error creating Discord transport:', error);
       }
@@ -286,7 +297,7 @@ export const logger: JellyLogger = {
       .map(async (transport) => {
         if (transport.flush) {
           try {
-            await transport.flush(this.options);
+            await transport.flush(this.options as any); // Cast to any for compatibility
           } catch (error) {
             console.error(`Error flushing transport '${transport.constructor.name}':`, error);
           }
@@ -295,7 +306,7 @@ export const logger: JellyLogger = {
 
     if (globalDiscordTransport) {
       flushPromises.push(
-        globalDiscordTransport.flush(this.options).catch(error => {
+        globalDiscordTransport.flush(this.options as any).catch(error => { // Cast to any for compatibility
           console.error(`Error flushing Discord transport:`, error);
         })
       );

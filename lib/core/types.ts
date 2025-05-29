@@ -31,6 +31,20 @@ export type CustomConsoleColors = Partial<{
 }>;
 
 /**
+ * Options for transport operations.
+ */
+export interface TransportOptions {
+  /** Output format for this specific transport operation */
+  format?: 'string' | 'json';
+  /** Custom formatter function for this transport operation */
+  formatter?: (entry: LogEntry) => string;
+  /** Pluggable formatter instance for this transport operation */
+  pluggableFormatter?: LogFormatter;
+  /** Additional transport-specific options */
+  [key: string]: unknown;
+}
+
+/**
  * Interface for log transports.
  * Transports are responsible for writing log entries to a destination.
  */
@@ -38,18 +52,18 @@ export interface Transport {
   /**
    * Logs an entry to the transport destination.
    * @param entry - The log entry to write
-   * @param options - Logger options for formatting and configuration
+   * @param options - Transport options for formatting and configuration
    */
   log(
     entry: LogEntry,
-    options: LoggerOptions
+    options?: TransportOptions
   ): Promise<void>;
 
   /**
    * Flushes any pending log entries.
    * Should be called before application shutdown.
    */
-  flush?(options?: LoggerOptions): Promise<void>;
+  flush?(options?: TransportOptions): Promise<void>;
 }
 
 /**
@@ -151,6 +165,8 @@ export interface LoggerOptions {
   discordWebhookUrl?: string;
   /** Context for this logger */
   context?: Record<string, unknown>;
+  /** Index signature to allow additional properties and ensure compatibility with TransportOptions */
+  [key: string]: unknown;
 }
 
 /**

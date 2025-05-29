@@ -15,8 +15,8 @@ const jellyLogger = logger as JellyLogger;
  */
 export function useConsoleAndFile(filePath: string, rotationConfig?: LogRotationConfig): void {
   jellyLogger.clearTransports();
-  jellyLogger.addTransport(new ConsoleTransport());
-  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig));
+  jellyLogger.addTransport(new ConsoleTransport() as any); // Cast to any for compatibility
+  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig) as any);
 }
 
 /**
@@ -31,9 +31,9 @@ export function useConsoleFileAndDiscord(
   rotationConfig?: LogRotationConfig
 ): void {
   jellyLogger.clearTransports();
-  jellyLogger.addTransport(new ConsoleTransport());
-  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig));
-  jellyLogger.addTransport(new DiscordWebhookTransport(discordWebhookUrl));
+  jellyLogger.addTransport(new ConsoleTransport() as any);
+  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig) as any);
+  jellyLogger.addTransport(new DiscordWebhookTransport(discordWebhookUrl) as any);
 }
 
 /**
@@ -42,8 +42,8 @@ export function useConsoleFileAndDiscord(
  */
 export function useConsoleAndWebSocket(websocketUrl: string): void {
   jellyLogger.clearTransports();
-  jellyLogger.addTransport(new ConsoleTransport());
-  jellyLogger.addTransport(new WebSocketTransport(websocketUrl));
+  jellyLogger.addTransport(new ConsoleTransport() as any);
+  jellyLogger.addTransport(new WebSocketTransport(websocketUrl) as any);
 }
 
 /**
@@ -60,10 +60,10 @@ export function useAllTransports(
   rotationConfig?: LogRotationConfig
 ): void {
   jellyLogger.clearTransports();
-  jellyLogger.addTransport(new ConsoleTransport());
-  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig));
-  jellyLogger.addTransport(new DiscordWebhookTransport(discordWebhookUrl));
-  jellyLogger.addTransport(new WebSocketTransport(websocketUrl));
+  jellyLogger.addTransport(new ConsoleTransport() as any);
+  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig) as any);
+  jellyLogger.addTransport(new DiscordWebhookTransport(discordWebhookUrl) as any);
+  jellyLogger.addTransport(new WebSocketTransport(websocketUrl) as any);
 }
 
 /**
@@ -72,7 +72,7 @@ export function useAllTransports(
  * @param rotationConfig - Optional file rotation configuration
  */
 export function addFileLogging(filePath: string, rotationConfig?: LogRotationConfig): void {
-  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig));
+  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig) as any);
 }
 
 /**
@@ -80,7 +80,7 @@ export function addFileLogging(filePath: string, rotationConfig?: LogRotationCon
  * @param discordWebhookUrl - Discord webhook URL
  */
 export function addDiscordLogging(discordWebhookUrl: string): void {
-  jellyLogger.addTransport(new DiscordWebhookTransport(discordWebhookUrl));
+  jellyLogger.addTransport(new DiscordWebhookTransport(discordWebhookUrl) as any);
 }
 
 /**
@@ -88,5 +88,5 @@ export function addDiscordLogging(discordWebhookUrl: string): void {
  * @param websocketUrl - WebSocket server URL
  */
 export function addWebSocketLogging(websocketUrl: string): void {
-  jellyLogger.addTransport(new WebSocketTransport(websocketUrl));
+  jellyLogger.addTransport(new WebSocketTransport(websocketUrl) as any);
 }

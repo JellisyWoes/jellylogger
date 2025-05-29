@@ -5,7 +5,7 @@ export type { BaseLogger, ChildLoggerOptions, Transport, JellyLogger } from './c
 
 // Log levels and types
 export { LogLevel } from './core/constants';
-export type { LoggerOptions, CustomConsoleColors, LogEntry, RedactionConfig } from './core/types';
+export type { LoggerOptions, CustomConsoleColors, LogEntry, RedactionConfig, TransportOptions } from './core/types';
 export type { LogRotationConfig } from './transports/FileTransport';
 
 // Transports

@@ -1,24 +1,14 @@
 import "./test-utils";
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { LogLevel, ConsoleTransport, FileTransport, logger, type LogEntry, type LogFormatter } from "../lib/index";
+import { LogLevel, ConsoleTransport, logger, type LogEntry, type LogFormatter } from "../lib/index";
+import { MemoryTransport, resetAllMocks } from "./test-utils";
 
 describe("Custom Formatter", () => {
-  let mockBunOps: any;
-  let writtenContent: string;
+  let memoryTransport: MemoryTransport;
 
   beforeEach(() => {
-    writtenContent = "";
-    mockBunOps = {
-      file: mock(() => ({
-        exists: async () => false,
-        size: 0,
-        text: async () => ""
-      })),
-      write: mock(async (_path: string, data: string) => {
-        writtenContent += data;
-        return data.length;
-      })
-    };
+    memoryTransport = new MemoryTransport();
+    resetAllMocks();
   });
 
   it("should use custom formatter for console output", () => {
@@ -50,7 +40,7 @@ describe("Custom Formatter", () => {
     console.info = originalInfo;
   });
 
-  it("should use custom formatter for file output", async () => {
+  it("should use custom formatter for memory transport output", async () => {
     const customFormatter: LogFormatter = {
       format: (entry: LogEntry) => {
         return JSON.stringify({
@@ -63,24 +53,31 @@ describe("Custom Formatter", () => {
       }
     };
 
-    const transport = new FileTransport("custom.log", undefined, mockBunOps);
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
       level: LogLevel.ERROR,
       levelName: "ERROR",
-      message: "File format test",
+      message: "Memory format test",
       args: ["extra1", "extra2"],
       data: { errorCode: "E001" }
     };
 
-    await transport.log(entry, { formatter: customFormatter.format });
-    await transport.flush();
+    // Use memory transport with custom formatter
+    await memoryTransport.log(entry, { formatter: customFormatter.format });
 
-    const parsedOutput = JSON.parse(writtenContent.trim());
+    expect(memoryTransport.logs).toHaveLength(1);
+    // The custom formatter should return valid JSON
+    const logStr = memoryTransport.logs[0];
+    let parsedOutput: any;
+    try {
+      parsedOutput = JSON.parse(logStr);
+    } catch (e) {
+      throw new Error(`Log is not valid JSON: ${logStr}`);
+    }
     expect(parsedOutput).toEqual({
       time: "2023-01-01T12:00:00.000Z",
       level: "error",
-      msg: "File format test",
+      msg: "Memory format test",
       data: { errorCode: "E001" },
       extra: ["extra1", "extra2"]
     });
@@ -242,7 +239,6 @@ describe("Custom Formatter", () => {
       }
     };
 
-    const transport = new FileTransport("object.log", undefined, mockBunOps);
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
       level: LogLevel.DEBUG,
@@ -252,11 +248,17 @@ describe("Custom Formatter", () => {
       data: { debugFlag: true }
     };
 
-    await transport.log(entry, { formatter: objectFormatter.format });
-    await transport.flush();
+    await memoryTransport.log(entry, { formatter: objectFormatter.format });
 
     // The transport should handle the object by JSON.stringify-ing it
-    const output = JSON.parse(writtenContent.trim());
+    expect(memoryTransport.logs).toHaveLength(1);
+    const outputStr = memoryTransport.logs[0];
+    let output: any;
+    try {
+      output = JSON.parse(outputStr);
+    } catch (e) {
+      throw new Error(`Log is not valid JSON: ${outputStr}`);
+    }
     expect(output.severity).toBe("DEBUG");
     expect(output.message).toBe("Object formatter test");
     expect(output.metadata.args).toEqual(["debug_arg"]);

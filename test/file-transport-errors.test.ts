@@ -1,35 +1,55 @@
 import "./test-utils";
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock } from "bun:test";
 import { LogLevel, FileTransport, type LogEntry } from "../lib/index";
+import { resetAllMocks } from "./test-utils";
 
 describe("FileTransport Error Handling", () => {
   let consoleErrorSpy: ReturnType<typeof spyOn>;
-  let mockBunOps: any;
+  let mockBunWrite: any;
+  let mockBunFile: any;
 
   beforeEach(() => {
     consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
+    resetAllMocks();
+
+    // Create mock functions for Bun operations
+    mockBunWrite = mock(async (_destination: any, _input: any, _options?: any) => {
+      throw new Error("Mocked write operation - should not create files");
+    });
     
-    mockBunOps = {
-      file: mock(() => ({
-        exists: async () => false,
-        size: 0,
-        text: async () => ""
-      })),
-      write: mock(async () => 1)
-    };
+    mockBunFile = mock((_path: string) => ({
+      exists: async () => false,
+      size: 0,
+      text: async () => "",
+      writer: () => ({
+        write: mock(() => {}),
+        flush: mock(async () => {}),
+        end: mock(async () => {})
+      })
+    }));
+
+    // Patch Bun.write and Bun.file directly (do not reassign globalThis.Bun)
+    if (typeof Bun !== "undefined") {
+      // @ts-ignore
+      Bun.write = mockBunWrite;
+      // @ts-ignore
+      Bun.file = mockBunFile;
+    }
   });
 
   afterEach(() => {
     consoleErrorSpy.mockRestore();
+    resetAllMocks();
   });
 
   it("should handle write failures gracefully", async () => {
-    mockBunOps.write = mock(async () => {
+    const appendFileSync = mock(() => {
       throw new Error("Disk full");
     });
 
-    // Disable auto-flush to prevent repeated flush attempts
-    const transport = new FileTransport("error.log", undefined, mockBunOps, 0);
+    const transport = new FileTransport("error.log", undefined, {
+      appendFileSync
+    });
     
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
@@ -41,26 +61,31 @@ describe("FileTransport Error Handling", () => {
 
     // Should not throw but log error to console
     await transport.log(entry, { format: "json" });
+    await transport.flush();
     
     // Wait a bit for async error handling
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Should log error to console - expect stream write error
+    // Should log error to console - expect write error
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "FileTransport stream write error:",
+      "FileTransport write error:",
       expect.objectContaining({ message: "Disk full" })
     );
+    
+    // Verify fs operation was attempted
+    expect(appendFileSync).toHaveBeenCalled();
   });
 
   it("should handle file system permission errors", async () => {
-    mockBunOps.write = mock(async () => {
+    const appendFileSync = mock(() => {
       const error = new Error("Permission denied");
       (error as any).code = "EACCES";
       throw error;
     });
 
-    // Disable auto-flush to prevent repeated flush attempts
-    const transport = new FileTransport("restricted.log", undefined, mockBunOps, 0);
+    const transport = new FileTransport("restricted.log", undefined, {
+      appendFileSync
+    });
     
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
@@ -72,26 +97,27 @@ describe("FileTransport Error Handling", () => {
 
     // Should not throw but log error to console
     await transport.log(entry, { format: "json" });
+    await transport.flush();
     
     // Wait for async error handling
     await new Promise(resolve => setTimeout(resolve, 50));
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "FileTransport stream write error:",
+      "FileTransport write error:",
       expect.objectContaining({ code: "EACCES" })
     );
   });
 
   it("should handle file existence check failures", async () => {
-    mockBunOps.file = mock(() => ({
-      exists: async () => {
-        throw new Error("Cannot access file");
-      },
-      size: 0,
-      text: async () => ""
-    }));
+    // FileTransport doesn't use Bun.file for basic logging operations
+    // It only uses fs operations which we've already mocked
+    const appendFileSync = mock(() => {
+      throw new Error("Cannot write to file");
+    });
 
-    const transport = new FileTransport("check-error.log", undefined, mockBunOps, 0);
+    const transport = new FileTransport("check-error.log", undefined, {
+      appendFileSync
+    });
     
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
@@ -101,17 +127,28 @@ describe("FileTransport Error Handling", () => {
       args: []
     };
 
-    // Should still write the log entry despite file check error
+    // Should still attempt to write despite file check error
     await transport.log(entry, { format: "json" });
+    
+    // Wait for async error handling
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Verify that write was attempted and failed
+    expect(appendFileSync).toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "FileTransport write error:",
+      expect.objectContaining({ message: "Cannot write to file" })
+    );
   });
 
   it("should handle writer creation failures", async () => {
-    // Test stream creation failure by providing invalid operations
-    mockBunOps.write = mock(async () => {
+    const appendFileSync = mock(() => {
       throw new Error("Cannot write to file");
     });
 
-    const transport = new FileTransport("writer-error.log", undefined, mockBunOps, 0);
+    const transport = new FileTransport("writer-error.log", undefined, {
+      appendFileSync
+    });
     
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
@@ -123,30 +160,34 @@ describe("FileTransport Error Handling", () => {
 
     // Should not throw but log error to console
     await transport.log(entry, { format: "json" });
+    await transport.flush();
     
     // Wait for async error handling
     await new Promise(resolve => setTimeout(resolve, 50));
 
     expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(appendFileSync).toHaveBeenCalled();
   });
 
   it("should continue logging after temporary errors", async () => {
     let failureCount = 0;
-    mockBunOps.write = mock(async (path: any, data: string) => {
+    const appendFileSync = mock(() => {
       failureCount++;
       if (failureCount <= 2) {
         throw new Error("Temporary failure");
       }
-      return data.length; // Succeed on third attempt
+      // Succeed on third attempt
     });
 
-    const transport = new FileTransport("recovery.log", undefined, mockBunOps, 0);
+    const transport = new FileTransport("recovery.log", undefined, {
+      appendFileSync
+    });
     
-    // Create a fresh console spy for this test to avoid interference
-    consoleErrorSpy.mockRestore(); // Clean up the beforeEach spy first
+    // Create a fresh console spy for this test
+    consoleErrorSpy.mockRestore();
     const testErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
     
-    // Log entries sequentially and wait for each to process completely
+    // Log entries sequentially
     await transport.log({
       timestamp: "2023-01-01T12:00:00.000Z",
       level: LogLevel.INFO,
@@ -154,8 +195,8 @@ describe("FileTransport Error Handling", () => {
       message: "First attempt",
       args: []
     }, { format: "json" });
+    await transport.flush();
 
-    // Wait for the first write to complete and error to be logged
     await new Promise(resolve => setTimeout(resolve, 100));
 
     await transport.log({
@@ -165,8 +206,8 @@ describe("FileTransport Error Handling", () => {
       message: "Second attempt",
       args: []
     }, { format: "json" });
+    await transport.flush();
 
-    // Wait for the second write to complete and error to be logged
     await new Promise(resolve => setTimeout(resolve, 100));
 
     await transport.log({
@@ -176,43 +217,40 @@ describe("FileTransport Error Handling", () => {
       message: "Third attempt",
       args: []
     }, { format: "json" });
+    await transport.flush();
 
-    // Wait for the third write to complete
     await new Promise(resolve => setTimeout(resolve, 100));
 
     // Verify the expected behavior
     expect(testErrorSpy).toHaveBeenCalledWith(
-      "FileTransport stream write error:",
+      "FileTransport write error:",
       expect.objectContaining({ message: "Temporary failure" })
     );
     expect(testErrorSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
     
     // The mock should have been called 3 times total
-    expect(mockBunOps.write).toHaveBeenCalledTimes(3);
+    expect(appendFileSync).toHaveBeenCalledTimes(3);
     
     testErrorSpy.mockRestore();
-    // Restore the original spy for other tests
     consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
   });
 
   it("should handle buffer overflow gracefully", async () => {
-    // Mock a scenario where writes fail initially
     let callCount = 0;
-    mockBunOps.write = mock(async () => {
+    const appendFileSync = mock(() => {
       callCount++;
       if (callCount <= 5) {
         throw new Error("Buffer overflow");
       }
-      return 1;
     });
 
-    const transport = new FileTransport("buffer.log", undefined, mockBunOps, 0);
+    const transport = new FileTransport("buffer.log", undefined, {
+      appendFileSync
+    });
 
-    // Create a fresh console spy for this test
-    consoleErrorSpy.mockRestore(); // Clean up the beforeEach spy first
+    consoleErrorSpy.mockRestore();
     const testErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
 
-    // Log entries sequentially to control error timing better
     const entries = Array.from({ length: 5 }, (_, i) => ({
       timestamp: `2023-01-01T12:${i.toString().padStart(2, '0')}:00.000Z`,
       level: LogLevel.INFO,
@@ -221,38 +259,36 @@ describe("FileTransport Error Handling", () => {
       args: []
     }));
 
-    // Log entries one by one with small delays to ensure proper error handling
+    // Log entries one by one with delays
     for (const entry of entries) {
       await transport.log(entry, { format: "json" });
+      await transport.flush();
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     
-    // Wait for final async error handling
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Should have at least 5 errors from failed stream writes
-    // (may have more due to auto-flush or retry mechanisms)
+    // Should have at least 5 errors from failed writes
     expect(testErrorSpy).toHaveBeenCalledWith(
-      "FileTransport stream write error:",
+      "FileTransport write error:",
       expect.objectContaining({ message: "Buffer overflow" })
     );
     expect(testErrorSpy.mock.calls.length).toBeGreaterThanOrEqual(5);
     
     testErrorSpy.mockRestore();
-    // Restore the original spy for other tests
     consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
   });
 
   it("should handle corrupted file scenarios", async () => {
-    mockBunOps.file = mock(() => ({
-      exists: async () => true,
-      size: 1000,
-      text: async () => {
-        throw new Error("File corrupted");
-      }
-    }));
+    // FileTransport primarily uses fs operations for basic logging
+    // We should test error handling in the fs operations instead
+    const appendFileSync = mock(() => {
+      throw new Error("File corrupted - cannot append");
+    });
 
-    const transport = new FileTransport("corrupted.log", undefined, mockBunOps, 0);
+    const transport = new FileTransport("corrupted.log", undefined, {
+      appendFileSync
+    });
     
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
@@ -262,7 +298,17 @@ describe("FileTransport Error Handling", () => {
       args: []
     };
 
-    // Should handle gracefully and continue logging (no size-based rotation needed)
+    // Should handle gracefully and continue logging
     await transport.log(entry, { format: "json" });
+    
+    // Wait for async error handling
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Verify that the error was handled gracefully
+    expect(appendFileSync).toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "FileTransport write error:",
+      expect.objectContaining({ message: "File corrupted - cannot append" })
+    );
   });
 });

@@ -5,7 +5,7 @@ example
 dist
 out
 *.tgz
-
+*.log
 # Source control
 .github/copilot-instructions.md
 

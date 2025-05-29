@@ -26,14 +26,19 @@ describe("Logger", () => {
 
     mockConsoleTransportLog = spyOn(ConsoleTransport.prototype, 'log'); 
 
-    actualMockBunWriteFn.mock.calls.length = 0;
-    actualMockBunWriteFn.mock.results.length = 0;
-    actualMockBunFileFn.mock.calls.length = 0;
-    actualMockBunFileFn.mock.results.length = 0;
-    mockFileExists.mock.calls.length = 0;
-    mockFileExists.mock.results.length = 0;
-    mockFileText.mock.calls.length = 0;
-    mockFileText.mock.results.length = 0;
+    // Clear mock call history properly
+    if ((actualMockBunWriteFn as any).mockClear) {
+      (actualMockBunWriteFn as any).mockClear();
+    }
+    if ((actualMockBunFileFn as any).mockClear) {
+      (actualMockBunFileFn as any).mockClear();
+    }
+    if (mockFileExists.mockClear) {
+      mockFileExists.mockClear();
+    }
+    if (mockFileText.mockClear) {
+      mockFileText.mockClear();
+    }
   });
 
   afterEach(() => {
@@ -185,7 +190,10 @@ describe("Logger", () => {
   describe("Multiple Transports", () => {
     it("should call log on all configured transports", () => {
       const consoleTransportInstance = new ConsoleTransport();
-      const fileTransportInstance = new FileTransport("test.log"); 
+      const fileTransportInstance = new FileTransport("test.log", undefined, {
+        file: actualMockBunFileFn,
+        write: actualMockBunWriteFn
+      }); 
 
       const consoleSpy = spyOn(consoleTransportInstance, 'log');
       const fileSpy = spyOn(fileTransportInstance, 'log').mockImplementation(async () => {}); 

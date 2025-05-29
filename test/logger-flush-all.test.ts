@@ -1,6 +1,7 @@
 import "./test-utils"; // Import mocks first
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock } from "bun:test";
 import { logger, LogLevel, ConsoleTransport, FileTransport, DiscordWebhookTransport, type Transport, type LogEntry, type LoggerOptions } from "../lib/index";
+import { actualMockBunFileFn, actualMockBunWriteFn } from "./test-utils";
 
 describe("Logger flushAll", () => {
   let originalConsoleError: typeof console.error;
@@ -17,7 +18,10 @@ describe("Logger flushAll", () => {
 
   it("should flush all transports that have flush method", async () => {
     const consoleTransport = new ConsoleTransport();
-    const fileTransport = new FileTransport("test.log");
+    const fileTransport = new FileTransport("test.log", undefined, {
+      file: actualMockBunFileFn,
+      write: actualMockBunWriteFn
+    });
     
     const consoleSpy = spyOn(consoleTransport, 'flush').mockResolvedValue(undefined);
     const fileSpy = spyOn(fileTransport, 'flush').mockResolvedValue(undefined);
@@ -59,7 +63,10 @@ describe("Logger flushAll", () => {
 
   it("should handle flush errors gracefully", async () => {
     const consoleTransport = new ConsoleTransport();
-    const fileTransport = new FileTransport("test.log");
+    const fileTransport = new FileTransport("test.log", undefined, {
+      file: actualMockBunFileFn,
+      write: actualMockBunWriteFn
+    });
     
     const consoleSpy = spyOn(consoleTransport, 'flush').mockRejectedValue(new Error("Console flush failed"));
     const fileSpy = spyOn(fileTransport, 'flush').mockResolvedValue(undefined);
