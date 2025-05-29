@@ -84,6 +84,22 @@ export class FileTransport implements Transport {
   }
 
   /**
+   * Add a write operation to the queue
+   */
+  private queueWrite(content: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.writeQueue.push({ content, resolve, reject });
+      
+      // Start processing the queue if not already processing
+      if (!this.processingQueue) {
+        this.processWriteQueue().catch(error => {
+          console.error('Error processing write queue:', error);
+        });
+      }
+    });
+  }
+
+  /**
    * Process the write queue sequentially to prevent race conditions
    */
   private async processWriteQueue(): Promise<void> {
@@ -105,7 +121,7 @@ export class FileTransport implements Transport {
         if (!writeItem) continue;
 
         try {
-          // Perform the actual write operation
+          // Use Bun.write with BunFile instance and append flag
           await this.bunFileOps.write(this.fileInstance, writeItem.content);
           writeItem.resolve();
         } catch (error) {
@@ -116,22 +132,6 @@ export class FileTransport implements Transport {
     } finally {
       this.processingQueue = false;
     }
-  }
-
-  /**
-   * Add a write operation to the queue
-   */
-  private queueWrite(content: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.writeQueue.push({ content, resolve, reject });
-      
-      // Start processing the queue if not already processing
-      if (!this.processingQueue) {
-        this.processWriteQueue().catch(error => {
-          console.error('Error processing write queue:', error);
-        });
-      }
-    });
   }
 
   /**
