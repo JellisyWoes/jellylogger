@@ -59,7 +59,10 @@ describe("ConsoleTransport", () => {
       expect(firstArg).toContain(`${expectedLevelString}:`);
       expect(firstArg).toContain("Test message");
       
-      expect(spiedConsoleMethod.mock.calls[0][1]).toEqual({ data: 1 });
+      // In the new format, args are included in the log string, not as separate arguments
+      expect(firstArg).toContain('{"data":1}');
+      // Verify only one argument is passed to console method (the formatted string)
+      expect(spiedConsoleMethod.mock.calls[0].length).toBe(1);
     });
 
     it(`should use console.${String(consoleMethod)} for LogLevel.${LogLevel[level]} in JSON format`, () => {
@@ -95,7 +98,10 @@ describe("ConsoleTransport", () => {
     expect(firstArg).toContain("INFO :");
     expect(firstArg).toContain("Hello");
     
-    expect(consoleSpies.info.mock.calls[0][1]).toBe("world");
+    // Args are now included in the formatted string
+    expect(firstArg).toContain("world");
+    // Verify only one argument is passed to console method
+    expect(consoleSpies.info.mock.calls[0].length).toBe(1);
   });
 
   it("should default to string format if options.format is undefined", () => {
@@ -113,7 +119,11 @@ describe("ConsoleTransport", () => {
     expect(firstArg).toContain("[2023-01-01T12:00:00.000Z]");
     expect(firstArg).toContain("INFO :");
     expect(firstArg).toContain("Undefined format test");
-    expect(consoleSpies.info.mock.calls[0][1]).toBe("arg1");
+    
+    // Args are now included in the formatted string
+    expect(firstArg).toContain("arg1");
+    // Verify only one argument is passed to console method
+    expect(consoleSpies.info.mock.calls[0].length).toBe(1);
   });
 
   it("should format string logs correctly with no args", () => {
@@ -293,7 +303,17 @@ describe("ConsoleTransport", () => {
     expect(consoleSpies.info).toHaveBeenCalledTimes(1);
     const call = consoleSpies.info.mock.calls[0];
     expect(call[0]).toContain("Multi-arg");
-    expect(call.length).toBeGreaterThan(1);
+    
+    // In the new format, all args are included in the formatted string
+    const logString = call[0] as string;
+    expect(logString).toContain("1");
+    expect(logString).toContain("two");
+    expect(logString).toContain("three");
+    expect(logString).toContain("4");
+    expect(logString).toContain("null");
+    expect(logString).toContain("undefined");
+    // Only one argument should be passed (the formatted string)
+    expect(call.length).toBe(1);
   });
 
   // Error object tests

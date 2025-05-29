@@ -149,6 +149,17 @@ export class FileTransport implements Transport {
 
   private getDefaultLogString(redactedEntry: LogEntry): string {
     const levelString = (LogLevel[redactedEntry.level] || 'UNKNOWN').padEnd(5);
+    
+    // Handle structured data display
+    let dataDisplay = '';
+    if (redactedEntry.data && Object.keys(redactedEntry.data).length > 0) {
+      try {
+        dataDisplay = ' ' + JSON.stringify(redactedEntry.data);
+      } catch {
+        dataDisplay = ' [Data - Circular or Non-serializable]';
+      }
+    }
+    
     // Safely process args for file output with circular reference protection
     const argsString = redactedEntry.args.length > 0 ? ' ' + redactedEntry.args.map((arg: unknown) => {
       if (arg === null) {
@@ -166,7 +177,8 @@ export class FileTransport implements Transport {
       }
       return String(arg);
     }).join(' ') : '';
-    return `[${redactedEntry.timestamp}] ${levelString}: ${redactedEntry.message}${argsString}${osEOL}`;
+    
+    return `[${redactedEntry.timestamp}] ${levelString}: ${redactedEntry.message}${dataDisplay}${argsString}${osEOL}`;
   }
 
   private async writeToFile(logString: string): Promise<void> {

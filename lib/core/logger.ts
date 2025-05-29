@@ -174,6 +174,7 @@ export const logger: JellyLogger = {
     let extractedData: Record<string, unknown> | undefined = data;
     const filteredArgs: unknown[] = [];
     
+    // Process arguments to separate structured data from other args
     for (const arg of nonNullArgs) {
       if (isRecord(arg) && !isErrorLike(arg)) {
         if (extractedData) {
@@ -188,6 +189,7 @@ export const logger: JellyLogger = {
 
     const processedArgs = processArgsUtil(filteredArgs);
 
+    // Handle Discord flag in data
     let shouldSendToDiscord = false;
     let cleanData = extractedData;
     if (extractedData && isRecord(extractedData) && 'discord' in extractedData) {

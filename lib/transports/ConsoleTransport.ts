@@ -37,6 +37,16 @@ export class ConsoleTransport implements Transport {
       redactedEntry.level === LogLevel.DEBUG || redactedEntry.level === LogLevel.TRACE ? console.debug :
       console.info;
 
+    if (options.pluggableFormatter) {
+      try {
+        const formatted = options.pluggableFormatter.format(redactedEntry);
+        consoleMethod(formatted);
+        return;
+      } catch (error) {
+        console.error('Pluggable formatter failed, falling back to default:', error instanceof Error ? error.message : String(error));
+      }
+    }
+
     if (options.formatter) {
       try {
         const formatted = options.formatter(redactedEntry);
@@ -116,39 +126,70 @@ export class ConsoleTransport implements Transport {
 
     const color = currentColors[redactedEntry.level] || "";
     const levelString = (LogLevel[redactedEntry.level] || 'UNKNOWN').padEnd(5);
-    const logString = `${currentColors.dim}[${redactedEntry.timestamp}]${currentColors.reset} ${currentColors.bold}${color}${levelString}:${currentColors.reset} ${redactedEntry.message}`;
-
-    // Safely process args for console output with better type handling
-    const safeArgs = redactedEntry.args.map((arg: unknown) => {
-      if (arg === null || arg === undefined) {
-        return arg;
+    
+    // Build the log string parts
+    const timestampPart = `${currentColors.dim}[${redactedEntry.timestamp}]${currentColors.reset}`;
+    const levelPart = `${currentColors.bold}${color}${levelString}:${currentColors.reset}`;
+    const messagePart = redactedEntry.message;
+    
+    // Handle structured data display
+    let dataDisplay = '';
+    if (redactedEntry.data && Object.keys(redactedEntry.data).length > 0) {
+      try {
+        dataDisplay = ' ' + JSON.stringify(redactedEntry.data);
+      } catch {
+        dataDisplay = ' [Data - Circular or Non-serializable]';
       }
-      
-      if (typeof arg === 'object') {
-        try {
-          // Test if the object can be JSON.stringify'd
-          JSON.stringify(arg);
-          return arg;
-        } catch {
-          // If not, convert to string representation
-          if (arg instanceof Error) {
-            return `Error: ${arg.message}`;
-          }
-          if (Array.isArray(arg)) {
-            return `[Array(${arg.length})]`;
-          }
-          return `[Object: ${Object.prototype.toString.call(arg)}]`;
-        }
-      }
-      
-      return arg;
-    });
-
-    if (safeArgs.length > 0) {
-      consoleMethod(logString, ...safeArgs);
-    } else {
-      consoleMethod(logString);
     }
+    
+    // Build args display
+    let argsDisplay = '';
+    if (redactedEntry.args.length > 0) {
+      const safeArgs = redactedEntry.args.map((arg: unknown) => {
+        if (arg === null || arg === undefined) {
+          return arg;
+        }
+        
+        if (typeof arg === 'object') {
+          try {
+            // Test if the object can be JSON.stringify'd
+            JSON.stringify(arg);
+            return arg;
+          } catch {
+            // If not, convert to string representation
+            if (arg instanceof Error) {
+              return `Error: ${arg.message}`;
+            }
+            if (Array.isArray(arg)) {
+              return `[Array(${arg.length})]`;
+            }
+            return `[Object: ${Object.prototype.toString.call(arg)}]`;
+          }
+        }
+        
+        return arg;
+      });
+
+      // Format args for display
+      if (safeArgs.length > 0) {
+        argsDisplay = ' ' + safeArgs.map(arg => {
+          if (typeof arg === 'string') {
+            return arg;
+          } else if (typeof arg === 'object' && arg !== null) {
+            try {
+              return JSON.stringify(arg);
+            } catch {
+              return String(arg);
+            }
+          } else {
+            return String(arg);
+          }
+        }).join(' ');
+      }
+    }
+
+    const logString = `${timestampPart} ${levelPart} ${messagePart}${dataDisplay}${argsDisplay}`;
+    consoleMethod(logString);
   }
 
   /**
