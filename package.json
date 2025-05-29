@@ -1,6 +1,6 @@
 {
   "name": "jellylogger",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "A flexible and easy-to-use logger library for Bun applications.",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
