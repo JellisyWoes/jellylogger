@@ -16,6 +16,13 @@ export class ChildLogger implements BaseLogger {
   constructor(parent: BaseLogger, options: ChildLoggerOptions = {}) {
     this.parent = parent;
     this.options = options;
+    // If context is provided, merge into defaultData for backward compatibility
+    if (options.context) {
+      this.options.defaultData = {
+        ...(options.defaultData || {}),
+        ...options.context
+      };
+    }
   }
 
   /**
@@ -96,19 +103,23 @@ export class ChildLogger implements BaseLogger {
         : parentPrefix || childPrefix;
     }
 
-    // Merge defaultData (child overrides parent for same keys)
-    if (this.options.defaultData || childOptions.defaultData) {
-      mergedOptions.defaultData = {
-        ...(this.options.defaultData || {}),
-        ...(childOptions.defaultData || {})
-      } as Record<string, unknown>;
+    // Merge defaultData/context (child overrides parent for same keys)
+    const parentData = {
+      ...(this.options.defaultData || {}),
+      ...(this.options.context || {})
+    };
+    const childData = {
+      ...(childOptions.defaultData || {}),
+      ...(childOptions.context || {})
+    };
+    if (Object.keys(parentData).length > 0 || Object.keys(childData).length > 0) {
+      mergedOptions.defaultData = { ...parentData, ...childData };
+    }
+    // Also propagate context property for compatibility
+    if (childOptions.context) {
+      mergedOptions.context = childOptions.context;
     }
 
-    // Ensure the parent passed to new ChildLogger is compatible.
-    // If this.parent is BaseLogger, and the main logger is JellyLogger,
-    // the 'this' in logger.child() is JellyLogger.
-    // So, new ChildLogger(this.parent as BaseLogger, mergedOptions) is fine.
-    // Or, if this.parent is the main logger instance, it's already compatible.
     return new ChildLogger(this.parent, mergedOptions);
   }
 }

@@ -161,6 +161,8 @@ export interface ChildLoggerOptions {
   messagePrefix?: string;
   /** Contextual data to include with every log entry from this child logger */
   defaultData?: Record<string, unknown>;
+  /** Context to include with every log entry from this child logger (alias for defaultData) */
+  context?: Record<string, unknown>;
 }
 
 /**
