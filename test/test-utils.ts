@@ -29,10 +29,20 @@ const mockBunFileInstanceForBunMock = {
 const _internalMockBunFileFn = mock(() => mockBunFileInstanceForBunMock);
 const _internalMockBunWriteFn = mock(async (_path: string | ActualBunFile | URL | number, _data: any) => { return Promise.resolve(1); }); // Default to resolve successfully
 
+// Mock for Bun shell operations
+const mockBunShell = mock((strings: TemplateStringsArray, ...values: any[]) => {
+  const command = String(strings[0]).trim();
+  // Return a mock shell result that resolves immediately
+  return {
+    quiet: () => Promise.resolve({ exitCode: 0, stdout: '', stderr: '' })
+  };
+});
+
 mock.module('bun', () => {
   return {
     file: _internalMockBunFileFn,
     write: _internalMockBunWriteFn,
+    $: mockBunShell, // Add shell mock
     color: (text: string, style?: string) => style ? `[color:${style}]${text}[/color]` : text,
     // Minimal mock: if Bun.env or other things are needed, they must be added here.
     // For this logger, it seems these are the primary Bun APIs used.
@@ -92,6 +102,7 @@ if (typeof globalThis.Bun === 'undefined') {
     value: {
       file: mockBunFileFn,
       write: mockBunWriteFn,
+      $: mockBunShell, // Add shell mock to global Bun
     },
     writable: true,
     configurable: true
@@ -100,4 +111,5 @@ if (typeof globalThis.Bun === 'undefined') {
   // If Bun already exists, just override the methods we need
   globalThis.Bun.file = mockBunFileFn;
   globalThis.Bun.write = mockBunWriteFn;
+  (globalThis.Bun as any).$ = mockBunShell; // Add shell mock
 }
