@@ -13,13 +13,13 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": false, // Changed: conflicts with bundler mode
     "noEmit": false,
-    "emitDeclarationOnly": true, // Changed: you want both JS and declarations
-
-    // Declaration files
+    "emitDeclarationOnly": true, // Set to true for declaration-only build
     "declaration": true,
-    "declarationMap": true,
+    "declarationMap": false,
+    "declarationDir": "./dist",
     "outDir": "./dist",
     "rootDir": "./lib",
+    "stripInternal": true, // Added as requested
 
     // Best practices
     "strict": true,
@@ -35,6 +35,6 @@
     "noUnusedParameters": true,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["lib/**/*.ts", "lib/**/*.tsx"],
-  "exclude": ["node_modules", "dist", "test", "**/*.test.ts", "**/*.spec.ts"]
+  "include": ["lib/**/*"],
+  "exclude": ["node_modules", "dist", "test", "**/*.test.ts", "**/*.spec.ts", "examples", "scripts"]
 }

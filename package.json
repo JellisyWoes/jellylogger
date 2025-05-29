@@ -1,6 +1,6 @@
 {
   "name": "jellylogger",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "A flexible and easy-to-use logger library for Bun applications.",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -15,7 +15,7 @@
   "scripts": {
     "clean": "rm -rf ./dist",
     "build:types": "tsc --emitDeclarationOnly",
-    "build:js": "bun build ./lib/index.ts --outdir ./dist --target bun --sourcemap --bundle --outfile index.js",
+    "build:js": "bun build ./lib/index.ts --outdir ./dist --target bun --bundle --outfile index.js --minify",
     "build": "bun run build:js && bun run build:types",
     "prebuild": "bun run clean",
     "typecheck": "tsc --noEmit"
