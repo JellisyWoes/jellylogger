@@ -4,6 +4,13 @@ A fast, flexible logging library built specifically for the [Bun](https://bun.sh
 
 [![npm version](https://badge.fury.io/js/jellylogger.svg)](https://www.npmjs.com/package/jellylogger)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-blue.svg)](https://www.typescriptlang.org/)
+[![Bun](https://img.shields.io/badge/Bun-1.2.14+-ff69b4.svg)](https://bun.sh/)
+[![GitHub stars](https://img.shields.io/github/stars/JellisyWoes/jellylogger?style=social)](https://github.com/JellisyWoes/jellylogger/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/JellisyWoes/jellylogger)](https://github.com/JellisyWoes/jellylogger/issues)
+[![GitHub last commit](https://img.shields.io/github/last-commit/JellisyWoes/jellylogger)](https://github.com/JellisyWoes/jellylogger/commits/main)
+[![npm downloads](https://img.shields.io/npm/dm/jellylogger)](https://www.npmjs.com/package/jellylogger)
+[![Bundle size](https://img.shields.io/bundlephobia/minzip/jellylogger)](https://bundlephobia.com/package/jellylogger)
 
 ## Table of Contents
 
