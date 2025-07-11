@@ -85,6 +85,12 @@ interface JellyLoggerImpl extends BaseLogger {
   options: LoggerOptions;
   setOptions(options: Partial<LoggerOptions>): void;
   resetOptions(): void;
+  _log(level: LogLevel, message: string, ...args: unknown[]): void;
+  _logWithData(level: LogLevel, message: string, data?: Record<string, unknown>, ...args: unknown[]): void;
+  addTransport(transport: any): void;
+  removeTransport(transport: any): void;
+  clearTransports(): void;
+  setTransports(transports: any[]): void;
 }
 
 class JellyLoggerImpl implements JellyLoggerImpl {
@@ -204,6 +210,45 @@ class JellyLoggerImpl implements JellyLoggerImpl {
       });
 
     await Promise.allSettled(flushPromises);
+  }
+
+  // Transport management methods
+  addTransport(transport: any): void {
+    if (!this.options.transports) {
+      this.options.transports = [];
+    }
+    this.options.transports.push(transport);
+  }
+
+  removeTransport(transport: any): void {
+    if (!this.options.transports) {
+      return;
+    }
+    const index = this.options.transports.indexOf(transport);
+    if (index !== -1) {
+      this.options.transports.splice(index, 1);
+    }
+  }
+
+  clearTransports(): void {
+    this.options.transports = [];
+  }
+
+  setTransports(transports: any[]): void {
+    this.options.transports = [...transports];
+  }
+
+  // Public logging methods for compatibility
+  _log(level: LogLevel, message: string, ...args: unknown[]): void {
+    this.log(level, message, ...args);
+  }
+
+  _logWithData(level: LogLevel, message: string, data?: Record<string, unknown>, ...args: unknown[]): void {
+    if (data) {
+      this.log(level, message, data, ...args);
+    } else {
+      this.log(level, message, ...args);
+    }
   }
 }
 

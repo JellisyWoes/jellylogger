@@ -3,10 +3,9 @@ import { FileTransport, type LogRotationConfig } from '../transports/FileTranspo
 import { ConsoleTransport } from '../transports/ConsoleTransport';
 import { DiscordWebhookTransport } from '../transports/DiscordWebhookTransport';
 import { WebSocketTransport } from '../transports/WebSocketTransport';
-import type { JellyLogger } from '../core/types';
 
-// Cast logger to JellyLogger to access transport management methods
-const jellyLogger = logger as JellyLogger;
+// Access logger transport management methods directly
+// The logger implementation includes all required transport management methods
 
 /**
  * Configure logger to use both console and file transports.
@@ -14,9 +13,9 @@ const jellyLogger = logger as JellyLogger;
  * @param rotationConfig - Optional file rotation configuration
  */
 export function useConsoleAndFile(filePath: string, rotationConfig?: LogRotationConfig): void {
-  jellyLogger.clearTransports();
-  jellyLogger.addTransport(new ConsoleTransport() as any); // Cast to any for compatibility
-  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig) as any);
+  logger.clearTransports();
+  logger.addTransport(new ConsoleTransport());
+  logger.addTransport(new FileTransport(filePath, rotationConfig));
 }
 
 /**
@@ -30,10 +29,10 @@ export function useConsoleFileAndDiscord(
   discordWebhookUrl: string,
   rotationConfig?: LogRotationConfig
 ): void {
-  jellyLogger.clearTransports();
-  jellyLogger.addTransport(new ConsoleTransport() as any);
-  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig) as any);
-  jellyLogger.addTransport(new DiscordWebhookTransport(discordWebhookUrl) as any);
+  logger.clearTransports();
+  logger.addTransport(new ConsoleTransport());
+  logger.addTransport(new FileTransport(filePath, rotationConfig));
+  logger.addTransport(new DiscordWebhookTransport(discordWebhookUrl));
 }
 
 /**
@@ -41,9 +40,9 @@ export function useConsoleFileAndDiscord(
  * @param websocketUrl - WebSocket server URL
  */
 export function useConsoleAndWebSocket(websocketUrl: string): void {
-  jellyLogger.clearTransports();
-  jellyLogger.addTransport(new ConsoleTransport() as any);
-  jellyLogger.addTransport(new WebSocketTransport(websocketUrl) as any);
+  logger.clearTransports();
+  logger.addTransport(new ConsoleTransport());
+  logger.addTransport(new WebSocketTransport(websocketUrl));
 }
 
 /**
@@ -59,11 +58,11 @@ export function useAllTransports(
   websocketUrl: string,
   rotationConfig?: LogRotationConfig
 ): void {
-  jellyLogger.clearTransports();
-  jellyLogger.addTransport(new ConsoleTransport() as any);
-  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig) as any);
-  jellyLogger.addTransport(new DiscordWebhookTransport(discordWebhookUrl) as any);
-  jellyLogger.addTransport(new WebSocketTransport(websocketUrl) as any);
+  logger.clearTransports();
+  logger.addTransport(new ConsoleTransport());
+  logger.addTransport(new FileTransport(filePath, rotationConfig));
+  logger.addTransport(new DiscordWebhookTransport(discordWebhookUrl));
+  logger.addTransport(new WebSocketTransport(websocketUrl));
 }
 
 /**
@@ -72,7 +71,7 @@ export function useAllTransports(
  * @param rotationConfig - Optional file rotation configuration
  */
 export function addFileLogging(filePath: string, rotationConfig?: LogRotationConfig): void {
-  jellyLogger.addTransport(new FileTransport(filePath, rotationConfig) as any);
+  logger.addTransport(new FileTransport(filePath, rotationConfig));
 }
 
 /**
@@ -80,7 +79,7 @@ export function addFileLogging(filePath: string, rotationConfig?: LogRotationCon
  * @param discordWebhookUrl - Discord webhook URL
  */
 export function addDiscordLogging(discordWebhookUrl: string): void {
-  jellyLogger.addTransport(new DiscordWebhookTransport(discordWebhookUrl) as any);
+  logger.addTransport(new DiscordWebhookTransport(discordWebhookUrl));
 }
 
 /**
@@ -88,5 +87,5 @@ export function addDiscordLogging(discordWebhookUrl: string): void {
  * @param websocketUrl - WebSocket server URL
  */
 export function addWebSocketLogging(websocketUrl: string): void {
-  jellyLogger.addTransport(new WebSocketTransport(websocketUrl) as any);
+  logger.addTransport(new WebSocketTransport(websocketUrl));
 }
