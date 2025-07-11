@@ -12,359 +12,401 @@ A fast, flexible logging library built specifically for the [Bun](https://bun.sh
 [![npm downloads](https://img.shields.io/npm/dm/jellylogger)](https://www.npmjs.com/package/jellylogger)
 [![Bundle size](https://img.shields.io/bundlephobia/minzip/jellylogger)](https://bundlephobia.com/package/jellylogger)
 
-## Table of Contents
+## ✨ Features
 
-- [JellyLogger](#jellylogger)
-  - [Table of Contents](#table-of-contents)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Key Features](#key-features)
-    - [🚀 **Bun-Optimized Performance**](#-bun-optimized-performance)
-    - [📝 **Multiple Transports**](#-multiple-transports)
-    - [🔒 **Smart Redaction**](#-smart-redaction)
-    - [🎨 **Flexible Formatting**](#-flexible-formatting)
-    - [👶 **Child Loggers**](#-child-loggers)
-  - [Core Concepts](#core-concepts)
-    - [Transports](#transports)
-      - [File Logging with Rotation](#file-logging-with-rotation)
-      - [Discord Alerts](#discord-alerts)
-      - [Real-time Streaming](#real-time-streaming)
-    - [Child Loggers](#child-loggers)
-    - [Data Protection](#data-protection)
-  - [Configuration Examples](#configuration-examples)
-    - [Development Setup](#development-setup)
-    - [Production Setup](#production-setup)
-    - [TypeScript Support](#typescript-support)
-  - [Real-World Usage](#real-world-usage)
-  - [Documentation](#documentation)
-  - [Development](#development)
-    - [Local Development with `bun link`](#local-development-with-bun-link)
-    - [Why JellyLogger?](#why-jellylogger)
-  - [Contributing](#contributing)
-  - [License](#license)
+- 🚀 **Bun-Optimized**: Built specifically for Bun runtime with native API integration
+- 🔌 **Multiple Transports**: Console, File, Discord Webhook, and WebSocket support
+- 🎨 **Flexible Formatters**: JSON, Logfmt, NDJSON, and custom formatters
+- 🔒 **Advanced Redaction**: Comprehensive data protection with patterns and field-specific rules
+- 👶 **Child Loggers**: Context inheritance with prefix and data merging
+- 🔄 **File Rotation**: Automatic log rotation with compression and date-based naming
+- 📊 **Structured Logging**: Rich metadata and context support
+- 🎯 **TypeScript-First**: Full type safety with extensive type definitions
+- ⚡ **High Performance**: Optimized for speed and memory efficiency
+- 🔧 **Extensible**: Plugin architecture for custom transports and formatters
 
-## Installation
+## 📦 Installation
 
 ```bash
-# Install with Bun (recommended)
 bun add jellylogger
-
-# Also works with npm/yarn in Bun projects
-npm install jellylogger
 ```
 
-**Requirements:**
-- Bun runtime (v1.0.0+)
-- TypeScript/JavaScript project
-
-## Quick Start
+## 🚀 Quick Start
 
 ```typescript
 import { logger } from "jellylogger";
 
-logger.info("Hello from JellyLogger!");
+// Basic logging
+logger.info("Hello, JellyLogger!");
+logger.error("Something went wrong", { error: "Connection failed" });
 
-// Structured log with extra data
-logger.warn("API timeout", { endpoint: "/users", duration: "5.2s" });
+// Structured logging with metadata
+logger.info("User login", {
+  userId: "12345",
+  ip: "192.168.1.1",
+  userAgent: "Mozilla/5.0..."
+});
 
-// Error logging
-try {
-  throw new Error("Something went wrong");
-} catch (error) {
-  logger.error("Database connection failed", error);
-}
+// Using different log levels
+logger.trace("Detailed debugging info");
+logger.debug("Debug information");
+logger.info("General information");
+logger.warn("Warning message");
+logger.error("Error occurred");
+logger.fatal("Critical system error");
 ```
 
-## Key Features
+## 📝 Log Levels
 
-### 🚀 **Bun-Optimized Performance**
-- Built specifically for Bun runtime with native APIs
-- Fast file I/O with `Bun.write()` and `Bun.file()`
-- Efficient color parsing with `Bun.color()`
+JellyLogger supports 7 log levels (0-6):
 
-### 📝 **Multiple Transports**
-- **Console** - Colorized console output
-- **File** - Log rotation with compression
-- **Discord** - Webhook alerts with batching
-- **WebSocket** - Real-time log streaming
-
-### 🔒 **Smart Redaction**
-- Automatic sensitive data protection
-- Pattern-based string redaction
-- Field-specific configurations
-- Custom redaction logic
-
-### 🎨 **Flexible Formatting**
-- Built-in JSON and string formats
-- Logfmt and NDJSON formatters
-- Custom formatter functions
-- Transport-specific formatting
-
-### 👶 **Child Loggers**
-- Inherit parent configuration
-- Add contextual prefixes
-- Merge structured data automatically
-
-## Core Concepts
-
-### Transports
-
-#### File Logging with Rotation
 ```typescript
-import { FileTransport } from "jellylogger";
+import { LogLevel } from "jellylogger";
 
-logger.addTransport(new FileTransport("./logs/app.log", {
-  maxFileSize: 10 * 1024 * 1024,  // 10MB
+LogLevel.SILENT  // 0 - No logs
+LogLevel.FATAL   // 1 - Critical errors
+LogLevel.ERROR   // 2 - Errors
+LogLevel.WARN    // 3 - Warnings  
+LogLevel.INFO    // 4 - Information
+LogLevel.DEBUG   // 5 - Debug info
+LogLevel.TRACE   // 6 - Detailed tracing
+```
+
+## 🎯 Multiple Transports
+
+### Console Transport (Default)
+
+```typescript
+import { logger, ConsoleTransport } from "jellylogger";
+
+logger.addTransport(new ConsoleTransport());
+```
+
+### File Transport with Rotation
+
+```typescript
+import { logger, FileTransport } from "jellylogger";
+
+logger.addTransport(new FileTransport("app.log", {
+  maxSize: "10MB",
   maxFiles: 5,
   compress: true,
-  dateRotation: true
+  datePattern: "YYYY-MM-DD"
 }));
 ```
 
-#### Discord Alerts
-```typescript
-import { DiscordWebhookTransport } from "jellylogger";
+### Discord Webhook Transport
 
-logger.addTransport(new DiscordWebhookTransport(
+```typescript
+import { logger, DiscordWebhookTransport } from "jellylogger";
+
+logger.addTransport(
+  new DiscordWebhookTransport("https://discord.com/api/webhooks/...")
+);
+```
+
+### WebSocket Transport
+
+```typescript
+import { logger, WebSocketTransport } from "jellylogger";
+
+logger.addTransport(
+  new WebSocketTransport("ws://localhost:8080/logs")
+);
+```
+
+### Transport Presets
+
+JellyLogger provides convenient preset functions:
+
+```typescript
+import { 
+  useConsoleAndFile,
+  useConsoleFileAndDiscord,
+  useAllTransports 
+} from "jellylogger";
+
+// Console + File
+useConsoleAndFile("app.log");
+
+// Console + File + Discord
+useConsoleFileAndDiscord("app.log", "https://discord.com/api/webhooks/...");
+
+// All transports
+useAllTransports(
+  "app.log", 
   "https://discord.com/api/webhooks/...",
-  { username: "MyApp Alerts" }
-));
-
-// Send critical alerts to Discord
-logger.error("Payment processor down", { 
-  service: "stripe",
-  discord: true  // Special flag for Discord
-});
+  "ws://localhost:8080/logs"
+);
 ```
 
-#### Real-time Streaming
-```typescript
-import { WebSocketTransport } from "jellylogger";
+## 🎨 Formatters
 
-logger.addTransport(new WebSocketTransport(
-  "ws://monitoring.example.com/logs"
-));
-```
-
-### Child Loggers
-
-Create context-aware loggers that inherit parent configuration:
+### Built-in Formatters
 
 ```typescript
-// Create request-scoped logger
-const requestLogger = logger.child({
-  messagePrefix: "[REQ-123]",
-  context: { requestId: "abc123", userId: 456 }
+import { logger, createFormatter } from "jellylogger";
+
+// JSON formatter
+logger.setOptions({ 
+  format: createFormatter("ndjson") 
 });
 
-requestLogger.info("Processing payment");
-// Output: "[REQ-123] Processing payment" + context data
-
-// Chain child loggers
-const dbLogger = requestLogger.child({
-  messagePrefix: "[DB]",
-  context: { operation: "SELECT" }
+// Logfmt formatter
+logger.setOptions({ 
+  format: createFormatter("logfmt") 
 });
 
-dbLogger.debug("Query executed");
-// Output: "[REQ-123] [DB] Query executed" + merged context
+// Default human-readable formatter
+logger.setOptions({ 
+  format: createFormatter("default") 
+});
 ```
 
-### Data Protection
+### Custom Formatters
 
-JellyLogger automatically redacts sensitive information:
+```typescript
+import type { LogFormatter, LogEntry } from "jellylogger";
+
+class CustomFormatter implements LogFormatter {
+  format(entry: LogEntry): string {
+    return `[${entry.levelName}] ${entry.message} ${JSON.stringify(entry.data || {})}`;
+  }
+}
+
+logger.setOptions({ format: new CustomFormatter() });
+```
+
+## 🔒 Data Redaction
+
+### Basic Redaction
 
 ```typescript
 logger.setOptions({
   redaction: {
-    keys: ["password", "*.token", "user.credentials.*"],
-    stringPatterns: [
-      /Bearer\s+[\w-]+/gi,           // Bearer tokens
-      /\b\d{4}-\d{4}-\d{4}-\d{4}\b/, // Credit cards
-    ]
+    keys: ["password", "token", "secret", "*.apiKey"],
+    replacement: "[REDACTED]"
   }
 });
 
-logger.info("User login", { 
-  username: "alice",
-  password: "secret123",        // → [REDACTED]
-  token: "Bearer abc123"        // → [REDACTED]
+logger.info("User data", { 
+  username: "alice", 
+  password: "hunter2" // Will be [REDACTED]
 });
 ```
 
-## Configuration Examples
+### Advanced Redaction with Patterns
 
-### Development Setup
+```typescript
+logger.setOptions({
+  redaction: {
+    keys: ["password", "*.credentials.*"],
+    keyPatterns: [/secret/i, /token/i],
+    valuePatterns: [/\b\d{4}-\d{4}-\d{4}-\d{4}\b/], // Credit cards
+    redactStrings: true,
+    stringPatterns: [
+      /Bearer\s+[\w-]+/gi,           // Bearer tokens
+      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g // Emails
+    ],
+    whitelist: ["user.id"],
+    redactIn: "file" // Only redact in file logs
+  }
+});
+```
+
+### Field-Specific Redaction
+
+```typescript
+logger.setOptions({
+  redaction: {
+    fieldConfigs: {
+      "user.email": {
+        replacement: "[EMAIL_REDACTED]"
+      },
+      "debug.*": {
+        disabled: true // Never redact debug fields
+      },
+      "financial.*": {
+        customRedactor: (value, context) => {
+          return context.target === "console" ? value : "[FINANCIAL_DATA]";
+        }
+      }
+    }
+  }
+});
+```
+
+### Custom Redaction Functions
+
+```typescript
+logger.setOptions({
+  redaction: {
+    customRedactor: (value, context) => {
+      if (context.path.includes('sensitive')) {
+        return '[CUSTOM_REDACTED]';
+      }
+      return value;
+    },
+    auditHook: (event) => {
+      console.debug(`Redacted ${event.type} at ${event.context.path}`);
+    }
+  }
+});
+```
+
+## 👶 Child Loggers
+
+Create contextual loggers that inherit parent configuration:
+
+```typescript
+// Create child logger with prefix
+const userLogger = logger.child("USER");
+userLogger.info("Login successful"); // [USER] Login successful
+
+// Child logger with data context
+const requestLogger = logger.child({
+  data: { requestId: "req-123", userId: "user-456" }
+});
+
+requestLogger.info("Processing request"); 
+// Includes requestId and userId in all logs
+
+// Nested child loggers
+const moduleLogger = requestLogger.child("AUTH");
+moduleLogger.warn("Invalid token"); 
+// [AUTH] Invalid token (with inherited context)
+```
+
+## ⚙️ Configuration
+
+### Global Logger Options
+
 ```typescript
 import { logger, LogLevel } from "jellylogger";
 
 logger.setOptions({
-  level: LogLevel.DEBUG,
-  useHumanReadableTime: true,
-  format: "string"
-});
-```
-
-### Production Setup
-```typescript
-import { useConsoleFileAndDiscord } from "jellylogger";
-
-useConsoleFileAndDiscord(
-  "./logs/app.log",
-  process.env.DISCORD_WEBHOOK_URL!
-);
-
-logger.setOptions({
   level: LogLevel.INFO,
+  format: createFormatter("ndjson"),
+  colors: {
+    info: "blue",
+    warn: "yellow",
+    error: "red"
+  },
   redaction: {
-    keys: ["password", "token", "apiKey"],
-    stringPatterns: [/Bearer\s+[\w-]+/gi]
+    keys: ["password", "token"],
+    redactIn: "both"
   }
 });
 ```
 
-### TypeScript Support
-
-Full TypeScript support with comprehensive type definitions:
+### Transport-Specific Options
 
 ```typescript
-import type { 
-  LogLevel, 
-  Transport, 
-  LogEntry, 
-  RedactionConfig 
-} from "jellylogger";
+import { FileTransport } from "jellylogger";
 
-// Create custom transports with full type safety
-class CustomTransport implements Transport {
-  async log(entry: LogEntry): Promise<void> {
-    // Your implementation
+const fileTransport = new FileTransport("app.log", {
+  maxSize: "50MB",
+  maxFiles: 10,
+  compress: true,
+  datePattern: "YYYY-MM-DD-HH"
+});
+
+logger.addTransport(fileTransport);
+```
+
+## 🔄 File Rotation
+
+Automatic log rotation with flexible configuration:
+
+```typescript
+import { FileTransport } from "jellylogger";
+
+const transport = new FileTransport("logs/app.log", {
+  maxSize: "100MB",      // Rotate when file exceeds 100MB
+  maxFiles: 30,          // Keep 30 old files
+  compress: true,        // Compress rotated files with gzip
+  datePattern: "YYYY-MM-DD", // Daily rotation pattern
+  auditFile: "logs/.audit.json" // Track rotation events
+});
+```
+
+## 🔌 Creating Custom Transports
+
+```typescript
+import type { Transport, LogEntry, TransportOptions } from "jellylogger";
+
+class DatabaseTransport implements Transport {
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    // Apply redaction if needed
+    const redacted = getRedactedEntry(entry, options?.redaction, 'file');
+    
+    // Store in database
+    await this.database.insert('logs', {
+      timestamp: redacted.timestamp,
+      level: redacted.level,
+      message: redacted.message,
+      data: JSON.stringify(redacted.data)
+    });
+  }
+
+  async flush(): Promise<void> {
+    // Flush any pending writes
+    await this.database.flush();
   }
 }
+
+logger.addTransport(new DatabaseTransport());
 ```
 
-## Real-World Usage
+## 🧪 Testing
 
-Express.js application with comprehensive logging:
+JellyLogger includes comprehensive test utilities:
 
 ```typescript
-import { logger, FileTransport, LogLevel } from "jellylogger";
+import { MemoryTransport, resetAllMocks } from "jellylogger/test-utils";
 
-// Configure for production
-logger.setOptions({
-  level: LogLevel.INFO,
-  format: "json",
-  redaction: {
-    keys: ["password", "token", "authorization"]
-  }
+// In your tests
+beforeEach(() => {
+  resetAllMocks();
 });
 
-logger.addTransport(new FileTransport("./logs/api.log", {
-  maxFileSize: 50 * 1024 * 1024,
-  maxFiles: 7,
-  compress: true
-}));
+const memoryTransport = new MemoryTransport();
+logger.addTransport(memoryTransport);
 
-// Express middleware example
-app.use((req, res, next) => {
-  const requestLogger = logger.child({
-    context: { 
-      requestId: crypto.randomUUID(),
-      method: req.method,
-      url: req.url 
-    }
-  });
-  
-  req.logger = requestLogger;
-  requestLogger.info("Request started");
-  
-  res.on('finish', () => {
-    requestLogger.info("Request completed", { 
-      statusCode: res.statusCode,
-      duration: Date.now() - req.startTime 
-    });
-  });
-  
-  next();
-});
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info("Shutting down gracefully...");
-  await logger.flushAll();
-  process.exit(0);
-});
+// Test logging
+logger.info("test message");
+expect(memoryTransport.logs).toHaveLength(1);
+expect(memoryTransport.logs[0].message).toBe("test message");
 ```
 
-## Documentation
+## 📚 Documentation
 
-For comprehensive guides and examples:
+- [Usage Guide](./docs/usage.md) - Comprehensive usage examples
+- [API Reference](./docs/api.md) - Complete API documentation  
+- [Extending JellyLogger](./docs/extending.md) - Custom transports and formatters
+- [Migration Guide](./docs/migration.md) - Upgrading from other loggers
 
-- **[📖 Usage Guide](./docs/usage.md)** - Complete feature walkthrough
-- **[🚂 Transports Guide](./docs/transports.md)** - Transport configuration and examples  
-- **[🎨 Formatters Guide](./docs/formatters.md)** - Custom formatting and output styles
-- **[🔧 Extending JellyLogger](./docs/extending.md)** - Create custom transports and formatters
-- **[📚 API Reference](./docs/api.md)** - Complete API documentation
+## 🤝 Contributing
 
-## Development
-
-### Local Development with `bun link`
-
-For local development and testing:
-
-1. In the `jellylogger` directory:
-    ```bash
-    bun run build
-    bun link
-    ```
-
-2. In your test project:
-    ```bash
-    bun link jellylogger
-    ```
-
-3. After making changes to `jellylogger`, rebuild and your linked projects will use the updated version:
-    ```bash
-    bun run build
-    ```
-
-4. To unlink when done:
-    ```bash
-    # In your test project
-    bun unlink jellylogger
-    
-    # In the jellylogger directory  
-    bun unlink
-    ```
-
-5. Remember to run tests before publishing:
-    ```bash
-    bun test
-    bun run build
-    ```
-
-### Why JellyLogger?
-
-- **🎯 Purpose-Built**: Designed specifically for Bun's performance characteristics
-- **🛡️ Production-Ready**: Comprehensive error handling and graceful degradation
-- **📈 Scalable**: Efficient batching, rotation, and memory management
-- **🔧 Extensible**: Plugin system for custom transports and formatters
-- **🔒 Secure**: Built-in redaction with audit trails
-- **📱 Modern**: TypeScript-first with excellent developer experience
-
-## Contributing
-
-We welcome contributions! Please follow these guidelines:
+We welcome contributions! Please see our [Contributing Guide](./CONTRIBUTING.md) for details.
 
 1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure TypeScript compilation passes
-5. Update documentation as needed
-6. Submit a pull request
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Run tests (`bun test`)
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
-Please see our [Contributing Guide](./CONTRIBUTING.md) for more details.
+## 📄 License
 
-## License
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
 
-MIT License - see [LICENSE](./LICENSE) file for details.
+## 🙏 Acknowledgments
+
+- Built for the [Bun](https://bun.sh/) runtime
+- Inspired by popular logging libraries like Winston, Pino, and Bunyan
+- TypeScript-first design for optimal developer experience
+
+---
+
+**Made with ❤️ for the Bun ecosystem**
