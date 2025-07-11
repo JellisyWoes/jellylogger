@@ -3,7 +3,8 @@ import { gzipSync } from 'bun';
 import { join, dirname, basename, extname } from 'path';
 import { existsSync, mkdirSync, appendFileSync, statSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'fs';
 import { getRedactedEntry } from '../redaction';
-import { LogLevel } from '../core/constants';
+import { DEFAULT_FORMATTER } from '../formatters';
+import { safeJsonStringify } from '../utils/serialization';
 import type { LogEntry, LoggerOptions, Transport, TransportOptions } from '../core/types';
 
 /**
@@ -149,68 +150,33 @@ export class FileTransport implements Transport {
         }
       }
 
-      // Format the log string
+      // Format the log string using formatters
       let logString: string;
+      
       if (loggerOptions.pluggableFormatter) {
-        const formatted = loggerOptions.pluggableFormatter.format(redactedEntry);
-        logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
+        try {
+          const formatted = loggerOptions.pluggableFormatter.format(redactedEntry, {
+            useColors: false // No colors in file output
+          });
+          logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
+        } catch (error) {
+          console.error('Pluggable formatter failed in FileTransport, using default:', error instanceof Error ? error.message : String(error));
+          logString = DEFAULT_FORMATTER.format(redactedEntry, { useColors: false }) + osEOL;
+        }
       } else if (loggerOptions.formatter) {
         try {
           const formatted = loggerOptions.formatter(redactedEntry);
           logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
         } catch (error) {
-          // Fallback to default formatting if custom formatter fails
           console.error('Custom formatter failed in FileTransport, using default:', error instanceof Error ? error.message : String(error));
-          logString = this.getDefaultLogString(redactedEntry);
+          logString = DEFAULT_FORMATTER.format(redactedEntry, { useColors: false }) + osEOL;
         }
       } else if (loggerOptions.format === 'json') {
-        try {
-          logString = JSON.stringify(redactedEntry) + osEOL;
-        } catch (e) {
-          // Handle circular references in JSON more robustly
-          try {
-            const sanitizedArgs = redactedEntry.args.map((arg: unknown) => {
-              if (typeof arg === 'object' && arg !== null) {
-                try {
-                  JSON.stringify(arg);
-                  return arg;
-                } catch {
-                  return '[Object - Circular or Non-serializable]';
-                }
-              }
-              return arg;
-            });
-
-            let sanitizedData: unknown = redactedEntry.data;
-            if (typeof redactedEntry.data === 'object' && redactedEntry.data !== null) {
-              try {
-                JSON.stringify(redactedEntry.data);
-              } catch {
-                sanitizedData = '[Data - Circular or Non-serializable]';
-              }
-            }
-            
-            logString = JSON.stringify({
-              timestamp: redactedEntry.timestamp,
-              level: redactedEntry.level,
-              levelName: redactedEntry.levelName,
-              message: redactedEntry.message,
-              args: sanitizedArgs,
-              data: sanitizedData,
-            }) + osEOL;
-          } catch (e2) {
-            logString = JSON.stringify({
-              timestamp: redactedEntry.timestamp,
-              level: redactedEntry.level,
-              levelName: redactedEntry.levelName,
-              message: redactedEntry.message,
-              args: '[Args - Processing Error]',
-              data: '[Data - Processing Error]'
-            }) + osEOL;
-          }
-        }
+        // Use unified JSON serialization for consistent circular reference handling
+        logString = safeJsonStringify(redactedEntry) + osEOL;
       } else {
-        logString = this.getDefaultLogString(redactedEntry);
+        // Use default formatter for standard file output
+        logString = DEFAULT_FORMATTER.format(redactedEntry, { useColors: false }) + osEOL;
       }
 
       // Write synchronously to ensure proper ordering
@@ -247,39 +213,6 @@ export class FileTransport implements Transport {
     }
   }
 
-  private getDefaultLogString(redactedEntry: LogEntry): string {
-    const levelString = (LogLevel[redactedEntry.level] || 'UNKNOWN').padEnd(5);
-    
-    // Handle structured data display
-    let dataDisplay = '';
-    if (redactedEntry.data && Object.keys(redactedEntry.data).length > 0) {
-      try {
-        dataDisplay = ' ' + JSON.stringify(redactedEntry.data);
-      } catch {
-        dataDisplay = ' [Data - Circular or Non-serializable]';
-      }
-    }
-    
-    // Safely process args for file output with circular reference protection
-    const argsString = redactedEntry.args.length > 0 ? ' ' + redactedEntry.args.map((arg: unknown) => {
-      if (arg === null) {
-        return 'null';
-      }
-      if (arg === undefined) {
-        return 'undefined';
-      }
-      if (typeof arg === 'object') {
-        try {
-          return JSON.stringify(arg);
-        } catch {
-          return `[Object: ${Object.prototype.toString.call(arg)}]`;
-        }
-      }
-      return String(arg);
-    }).join(' ') : '';
-    
-    return `[${redactedEntry.timestamp}] ${levelString}: ${redactedEntry.message}${dataDisplay}${argsString}${osEOL}`;
-  }
 
   /**
    * Rotate log files with proper locking and error handling.

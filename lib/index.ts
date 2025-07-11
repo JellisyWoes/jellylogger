@@ -14,15 +14,14 @@ export { FileTransport } from './transports/FileTransport';
 export { DiscordWebhookTransport } from './transports/DiscordWebhookTransport';
 export { WebSocketTransport } from './transports/WebSocketTransport';
 
-// Formatters
-export type { LogFormatter } from './formatters/LogFormatter';
-export { LogfmtFormatter } from './formatters/LogfmtFormatter';
-export { NdjsonFormatter } from './formatters/NdjsonFormatter';
+// Formatters - Re-export all formatter classes and types
+export * from './formatters';
+export { DefaultFormatter } from './formatters/DefaultFormatter';
 
 // Helper functions
 export { isRecord, isErrorLike } from './utils/typeGuards';
 export { getTimestamp, serializeError, processLogArgs } from './utils/serialization';
-export { toAnsiColor } from './utils/colors';
+export { toAnsiColor, DEFAULT_COLORS, ENHANCED_DEFAULT_COLORS, getFormatterColors } from './utils/colors';
 
 // Transport preset helpers
 export {

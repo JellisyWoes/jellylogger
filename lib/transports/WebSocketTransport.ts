@@ -1,4 +1,5 @@
 import { getRedactedEntry } from '../redaction';
+import { safeJsonStringify } from '../utils/serialization';
 import type { LogEntry, LoggerOptions, Transport } from '../core/types';
 
 export interface WebSocketTransportOptions {
@@ -8,7 +9,7 @@ export interface WebSocketTransportOptions {
   maxReconnectIntervalMs?: number;
   /** Whether to redact logs for this transport. Default: true */
   redact?: boolean;
-  /** Custom function to serialize log entries. Default: JSON.stringify */
+  /** Custom function to serialize log entries. Default: safeJsonStringify */
   serializer?: (entry: LogEntry) => string;
 }
 
@@ -32,7 +33,7 @@ export class WebSocketTransport implements Transport {
     this.options = options ?? {};
     this.reconnectInterval = options?.reconnectIntervalMs ?? 1000;
     this.maxReconnectInterval = options?.maxReconnectIntervalMs ?? 30000;
-    this.serializer = options?.serializer ?? JSON.stringify;
+    this.serializer = options?.serializer ?? safeJsonStringify;
     
     // Start initial connection
     this.connectionPromise = this.connect();

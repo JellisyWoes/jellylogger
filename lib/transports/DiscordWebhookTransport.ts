@@ -1,5 +1,7 @@
 import { getRedactedEntry } from '../redaction';
 import { LogLevel } from '../core/constants';
+import { DEFAULT_FORMATTER } from '../formatters';
+import { safeJsonStringify, safeStringify } from '../utils/serialization';
 import type { LogEntry, LoggerOptions, Transport, TransportOptions } from '../core/types';
 
 /**
@@ -147,29 +149,30 @@ export class DiscordWebhookTransport implements Transport {
 
     for (const entry of batch) {
       let formatted: string;
-      if (options.formatter) {
+      
+      if (options.pluggableFormatter) {
+        try {
+          formatted = options.pluggableFormatter.format(entry, { useColors: false });
+        } catch (error) {
+          console.error('Pluggable formatter failed in DiscordWebhookTransport, using default:', error instanceof Error ? error.message : String(error));
+          formatted = DEFAULT_FORMATTER.format(entry, { useColors: false });
+        }
+      } else if (options.formatter) {
         formatted = options.formatter(entry);
       } else if (options.format === 'json') {
-        try {
-          formatted = '```json\n' + JSON.stringify(entry, null, 2) + '\n```';
-        } catch {
-          formatted = '```json\n' + JSON.stringify({
-            ...entry,
-            args: entry.args.map((arg: unknown) => typeof arg === 'object' && arg !== null ? '[Object - Circular]' : arg)
-          }, null, 2) + '\n```';
-        }
+        // Use unified JSON serialization for consistent handling
+        const jsonString = safeJsonStringify(entry);
+        formatted = '```json\n' + jsonString + '\n```';
       } else {
+        // Use default formatter but format for Discord with markdown
         const levelString = LogLevel[entry.level];
-        const argsString = entry.args && entry.args.length > 0
-          ? '\n' + entry.args.map(arg => {
+        const argsString = entry.args && entry.args.processedArgs && entry.args.processedArgs.length > 0
+          ? '\n' + entry.args.processedArgs.map((arg: unknown) => {
               if (typeof arg === 'object') {
-                try {
-                  return '```json\n' + JSON.stringify(arg, null, 2) + '\n```';
-                } catch {
-                  return String(arg);
-                }
+                const stringified = safeStringify(arg);
+                return '```json\n' + stringified + '\n```';
               }
-              return String(arg);
+              return safeStringify(arg);
             }).join('\n')
           : '';
         formatted = `**[${entry.timestamp}] ${levelString}:** ${entry.message}${argsString}`;

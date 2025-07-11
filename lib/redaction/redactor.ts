@@ -424,7 +424,40 @@ export function redactLogEntry(
           triggerAudit('string', messageContext, fieldValue, redactedMessage, config, 'string pattern match');
           (newEntry as any)[field] = redactedMessage;
         }
+      } else if (field === 'args' && fieldValue && typeof fieldValue === 'object' && 'processedArgs' in fieldValue) {
+        // Handle new args structure: { processedArgs: unknown[]; hasComplexArgs: boolean }
+        const argsObj = fieldValue as { processedArgs: unknown[]; hasComplexArgs: boolean };
+        const processedArgs = Array.isArray(argsObj.processedArgs) ? argsObj.processedArgs : [];
+        
+        const redactedProcessedArgs = processedArgs.map((arg, index) => {
+          if (typeof arg === 'string' && config.redactStrings) {
+            const stringRedactionContext: RedactionContext = {
+              field: 'args',
+              key: `processedArgs[${index}]`,
+              path: `args.processedArgs[${index}]`, // Full path for audit/context
+              originalValue: arg,
+              target: baseFieldContext.target,
+            };
+            return redactString(arg, config, stringRedactionContext);
+          }
+          
+          // For redactObject, the 'path' it operates on starts relative to 'arg'.
+          // The 'key' it receives in its context is its identifier in the parent (processedArgs array).
+          const contextForRedactObject: Partial<RedactionContext> = {
+            field: 'args',       // Top-level field name
+            path: '',            // Path is relative to 'arg' itself for internal matching
+            key: `processedArgs[${index}]`, // Key of this item in the processedArgs array
+            target: baseFieldContext.target,
+          };
+          return redactObject(arg, config, contextForRedactObject, new WeakSet(), 0);
+        });
+        
+        (newEntry as any)[field] = {
+          ...argsObj,
+          processedArgs: redactedProcessedArgs
+        };
       } else if (field === 'args' && Array.isArray(fieldValue)) {
+        // Legacy support for old args structure (array)
         (newEntry as any)[field] = fieldValue.map((arg, index) => {
           if (typeof arg === 'string' && config.redactStrings) {
             const stringRedactionContext: RedactionContext = {

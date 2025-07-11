@@ -1,10 +1,13 @@
 import { LogLevel } from './constants';
-import type { LoggerOptions, LogEntry, BaseLogger, ChildLoggerOptions, Transport, JellyLogger } from './types'; // Added JellyLogger
 import { ConsoleTransport } from '../transports/ConsoleTransport';
-import { DiscordWebhookTransport } from '../transports/DiscordWebhookTransport';
-import { getTimestamp } from '../utils/time';
-import { processLogArgs as processArgsUtil } from '../utils/serialization';
-import { isRecord, isErrorLike } from '../utils/typeGuards';
+import { getTimestamp, processLogArgs } from '../utils/serialization';
+import type { 
+  BaseLogger, 
+  ChildLoggerOptions, 
+  LoggerOptions, 
+  LogEntry, 
+  TransportOptions 
+} from './types';
 
 /**
  * ChildLogger class to create loggers with inherited configuration and specific context.
@@ -16,322 +19,195 @@ export class ChildLogger implements BaseLogger {
   constructor(parent: BaseLogger, options: ChildLoggerOptions = {}) {
     this.parent = parent;
     this.options = options;
-    // If context is provided, merge into defaultData for backward compatibility
-    if (options.context) {
-      this.options.defaultData = {
-        ...(options.defaultData || {}),
-        ...options.context
-      };
-    }
   }
 
-  /**
-   * Applies child logger transformations to a message and arguments.
-   */
-  private transformLogCall(message: string, ...args: unknown[]): [string, ...unknown[]] {
-    // Apply message prefix if configured
-    let transformedMessage = message;
-    if (this.options.messagePrefix) {
-      transformedMessage = `${this.options.messagePrefix} ${message}`;
-    }
-
-    // If we have defaultData, we need to inject it into the arguments
-    if (this.options.defaultData && Object.keys(this.options.defaultData).length > 0) {
-      // Find if there's already a data object in the args that we can merge with
-      let hasDataObject = false;
-      const transformedArgs = args.map(arg => {
-        if (isRecord(arg) && !isErrorLike(arg) && !hasDataObject) {
-          hasDataObject = true;
-          // Merge defaultData with existing data object (existing data takes precedence)
-          return { ...this.options.defaultData!, ...arg };
-        }
-        return arg;
-      });
-
-      // If no data object was found, add defaultData as a new argument
-      if (!hasDataObject) {
-        transformedArgs.unshift(this.options.defaultData);
-      }
-
-      return [transformedMessage, ...transformedArgs] as [string, ...unknown[]];
-    }
-
-    return [transformedMessage, ...args];
+  private createPrefixedMessage(message: string): string {
+    const prefix = this.options.messagePrefix;
+    if (!prefix) return message;
+    return `${prefix} ${message}`;
   }
 
-  // ...existing logging methods...
-  fatal(message: string, ...args: unknown[]): void {
-    const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
-    this.parent.fatal(transformedMessage, ...transformedArgs);
+  private log(level: LogLevel, message: string, ...optionalParams: unknown[]): void {
+    const prefixedMessage = this.createPrefixedMessage(message);
+    (this.parent as any).log(level, prefixedMessage, ...optionalParams);
   }
 
-  error(message: string, ...args: unknown[]): void {
-    const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
-    this.parent.error(transformedMessage, ...transformedArgs);
+  fatal(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.FATAL, message, ...optionalParams);
   }
 
-  warn(message: string, ...args: unknown[]): void {
-    const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
-    this.parent.warn(transformedMessage, ...transformedArgs);
+  error(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.ERROR, message, ...optionalParams);
   }
 
-  info(message: string, ...args: unknown[]): void {
-    const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
-    this.parent.info(transformedMessage, ...transformedArgs);
+  warn(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.WARN, message, ...optionalParams);
   }
 
-  debug(message: string, ...args: unknown[]): void {
-    const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
-    this.parent.debug(transformedMessage, ...transformedArgs);
+  info(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.INFO, message, ...optionalParams);
   }
 
-  trace(message: string, ...args: unknown[]): void {
-    const [transformedMessage, ...transformedArgs] = this.transformLogCall(message, ...args);
-    this.parent.trace(transformedMessage, ...transformedArgs);
+  debug(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.DEBUG, message, ...optionalParams);
   }
 
-  child(childOptions: ChildLoggerOptions = {}): ChildLogger {
-    // Merge parent and child options
-    const mergedOptions: ChildLoggerOptions = {};
+  trace(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.TRACE, message, ...optionalParams);
+  }
 
-    // Merge message prefixes
-    if (this.options.messagePrefix || childOptions.messagePrefix) {
-      const parentPrefix = this.options.messagePrefix || '';
-      const childPrefix = childOptions.messagePrefix || '';
-      mergedOptions.messagePrefix = parentPrefix && childPrefix 
-        ? `${parentPrefix} ${childPrefix}`
-        : parentPrefix || childPrefix;
-    }
+  child(options: ChildLoggerOptions = {}): BaseLogger {
+    const combinedPrefix = this.options.messagePrefix 
+      ? (options.messagePrefix ? `${this.options.messagePrefix} ${options.messagePrefix}` : this.options.messagePrefix)
+      : options.messagePrefix;
+    
+    return new ChildLogger(this.parent, {
+      ...options,
+      messagePrefix: combinedPrefix
+    });
+  }
 
-    // Merge defaultData/context (child overrides parent for same keys)
-    const parentData = {
-      ...(this.options.defaultData || {}),
-      ...(this.options.context || {})
-    };
-    const childData = {
-      ...(childOptions.defaultData || {}),
-      ...(childOptions.context || {})
-    };
-    if (Object.keys(parentData).length > 0 || Object.keys(childData).length > 0) {
-      mergedOptions.defaultData = { ...parentData, ...childData };
-    }
-    // Also propagate context property for compatibility
-    if (childOptions.context) {
-      mergedOptions.context = childOptions.context;
-    }
-
-    return new ChildLogger(this.parent, mergedOptions);
+  flushAll(): Promise<void> {
+    return this.parent.flushAll();
   }
 }
 
 // Define defaultOptions for logger
 export const defaultOptions: LoggerOptions = {
   level: LogLevel.INFO,
-  useHumanReadableTime: false,
-  transports: [new ConsoleTransport()], // Default to ConsoleTransport
+  useHumanReadableTime: true,
+  transports: [new ConsoleTransport()],
   format: 'string',
   customConsoleColors: {},
 };
 
-// Singleton Discord transport instance
-let globalDiscordTransport: DiscordWebhookTransport | null = null;
+interface JellyLoggerImpl extends BaseLogger {
+  options: LoggerOptions;
+  setOptions(options: Partial<LoggerOptions>): void;
+  resetOptions(): void;
+}
 
-export const logger: JellyLogger = {
-  options: { ...defaultOptions },
+class JellyLoggerImpl implements JellyLoggerImpl {
+  options: LoggerOptions = { ...defaultOptions };
 
-  setOptions(newOptions: LoggerOptions): void {
-    // If user provides transports, override the default entirely
-    if (newOptions.transports) {
-      this.options = { ...this.options, ...newOptions, transports: newOptions.transports };
-    } else {
-      this.options = { ...this.options, ...newOptions };
-    }
-    if (newOptions.customConsoleColors) {
-      this.options.customConsoleColors = {
-        ...(this.options.customConsoleColors || {}),
-        ...newOptions.customConsoleColors,
-      };
-    }
-    if (newOptions.redaction) {
-      this.options.redaction = {
-        ...(this.options.redaction || {}),
-        ...newOptions.redaction,
-      };
-    }
-  },
+  setOptions(options: Partial<LoggerOptions>): void {
+    this.options = { ...this.options, ...options };
+  }
 
   resetOptions(): void {
     this.options = { ...defaultOptions };
-  },
+  }
 
-  _log(level: LogLevel, message: string, ...args: unknown[]): void {
-    this._logWithData(level, message, undefined, ...args);
-  },
+  private shouldLog(level: LogLevel): boolean {
+    const minLevel: LogLevel = this.options.level ?? LogLevel.INFO;
+    return level <= minLevel;
+  }
 
-  _logWithData(level: LogLevel, message: string, data?: Record<string, unknown>, ...args: unknown[]): void {
-    const effectiveLevel = this.options.level ?? LogLevel.INFO;
-    if (level > effectiveLevel || effectiveLevel === LogLevel.SILENT) {
-      return;
-    }
-
-    const nonNullArgs = args.filter(arg => arg !== undefined && arg !== null);
+  private createLogEntry(level: LogLevel, message: string, optionalParams: unknown[]): LogEntry {
+    const { processedArgs, hasComplexArgs } = processLogArgs(optionalParams);
     
-    let extractedData: Record<string, unknown> | undefined = data;
-    const filteredArgs: unknown[] = [];
+    // Separate data objects from other args
+    const dataObjects: Record<string, unknown>[] = [];
+    const otherArgs: unknown[] = [];
     
-    // Process arguments to separate structured data from other args
-    for (const arg of nonNullArgs) {
-      if (isRecord(arg) && !isErrorLike(arg)) {
-        // Test if the object is serializable (no circular references)
-        let isSerializable = true;
-        try {
-          JSON.stringify(arg);
-        } catch {
-          isSerializable = false;
-        }
-        
-        if (isSerializable) {
-          // Move serializable objects to data
-          if (extractedData) {
-            extractedData = { ...extractedData, ...arg };
-          } else {
-            extractedData = arg as Record<string, unknown>;
-          }
-        } else {
-          // Keep non-serializable objects in args but sanitize them
-          filteredArgs.push('[Object - Circular or Non-serializable]');
-        }
+    for (const arg of processedArgs) {
+      if (arg && typeof arg === 'object' && !Array.isArray(arg) && !(arg instanceof Error)) {
+        dataObjects.push(arg as Record<string, unknown>);
       } else {
-        filteredArgs.push(arg);
+        otherArgs.push(arg);
       }
     }
+    
+    // Merge all data objects into one
+    const data = dataObjects.length > 0 ? Object.assign({}, ...dataObjects) : undefined;
 
-    const processedArgs = processArgsUtil(filteredArgs);
-
-    // Handle Discord flag in data
-    let shouldSendToDiscord = false;
-    let cleanData = extractedData;
-    if (extractedData && isRecord(extractedData) && 'discord' in extractedData) {
-      shouldSendToDiscord = Boolean(extractedData.discord);
-      const { discord, ...restData } = extractedData;
-      cleanData = Object.keys(restData).length > 0 ? restData as Record<string, unknown> : undefined;
-    }
-
-    let entry: LogEntry = {
+    return {
       timestamp: getTimestamp(this.options.useHumanReadableTime),
       level,
       levelName: LogLevel[level],
       message,
-      args: processedArgs,
-      data: cleanData,
+      data,
+      args: {
+        processedArgs: otherArgs,
+        hasComplexArgs
+      }
+    };
+  }
+
+  private log(level: LogLevel, message: string, ...optionalParams: unknown[]): void {
+    if (!this.shouldLog(level)) {
+      return;
+    }
+
+    const entry = this.createLogEntry(level, message, optionalParams);
+    const transportOptions: TransportOptions = {
+      ...this.options
     };
 
+    // Send to all transports with null safety
     const transports = this.options.transports ?? [];
     for (const transport of transports) {
       try {
-        // Pass only the options relevant for the transport
-        const result = transport.log(entry, this.options as any); // Cast to any to allow LoggerOptions as TransportOptions
-        // Only handle as promise if it actually returns a promise
-        if (result && typeof result.then === 'function') {
-          result.catch(error => {
-            console.error(`Error in transport '${transport.constructor.name}':`, error);
+        const result = transport.log(entry, transportOptions);
+        if (result instanceof Promise) {
+          result.catch((error: unknown) => {
+            console.error(`Async error in transport '${transport.constructor.name}':`, error);
           });
         }
       } catch (error) {
         console.error(`Synchronous error in transport '${transport.constructor.name}':`, error);
       }
     }
+  }
 
-    if (shouldSendToDiscord && this.options.discordWebhookUrl) {
-      try {
-        const discordTransport = getDiscordTransport(this.options.discordWebhookUrl);
-        const result = discordTransport.log(entry, this.options as any); // Cast to any for compatibility
-        if (result && typeof result.then === 'function') {
-          result.catch(error => {
-            console.error('Error in Discord transport:', error);
-          });
-        }
-      } catch (error) {
-        console.error('Error creating Discord transport:', error);
-      }
-    }
+  fatal(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.FATAL, message, ...optionalParams);
+  }
 
-    function getDiscordTransport(webhookUrl: string): DiscordWebhookTransport {
-      if (!globalDiscordTransport || (globalDiscordTransport as any)['webhookUrl'] !== webhookUrl) { // Type assertion for clarity
-        globalDiscordTransport = new DiscordWebhookTransport(webhookUrl);
-      }
-      return globalDiscordTransport;
-    }
-  },
+  error(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.ERROR, message, ...optionalParams);
+  }
 
-  fatal(message: string, ...args: unknown[]): void {
-    this._logWithData(LogLevel.FATAL, message, undefined, ...args);
-  },
+  warn(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.WARN, message, ...optionalParams);
+  }
 
-  error(message: string, ...args: unknown[]): void {
-    this._logWithData(LogLevel.ERROR, message, undefined, ...args);
-  },
+  info(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.INFO, message, ...optionalParams);
+  }
 
-  warn(message: string, ...args: unknown[]): void {
-    this._logWithData(LogLevel.WARN, message, undefined, ...args);
-  },
+  debug(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.DEBUG, message, ...optionalParams);
+  }
 
-  info(message: string, ...args: unknown[]): void {
-    this._logWithData(LogLevel.INFO, message, undefined, ...args);
-  },
+  trace(message: string, ...optionalParams: unknown[]): void {
+    this.log(LogLevel.TRACE, message, ...optionalParams);
+  }
 
-  debug(message: string, ...args: unknown[]): void {
-    this._logWithData(LogLevel.DEBUG, message, undefined, ...args);
-  },
-
-  trace(message: string, ...args: unknown[]): void {
-    this._logWithData(LogLevel.TRACE, message, undefined, ...args);
-  },
-
-  child(childOptions: ChildLoggerOptions = {}): ChildLogger {
-    return new ChildLogger(this, childOptions);
-  },
+  child(options: ChildLoggerOptions = {}): BaseLogger {
+    return new ChildLogger(this, options);
+  }
 
   async flushAll(): Promise<void> {
-    const flushPromises = (this.options.transports ?? [])
-      .map(async (transport) => {
+    const transports = this.options.transports ?? [];
+    const flushPromises = transports
+      .map(transport => {
         if (transport.flush) {
           try {
-            await transport.flush(this.options as any); // Cast to any for compatibility
+            return transport.flush(this.options);
           } catch (error) {
             console.error(`Error flushing transport '${transport.constructor.name}':`, error);
+            return Promise.resolve();
           }
         }
+        return Promise.resolve();
       });
 
-    if (globalDiscordTransport) {
-      flushPromises.push(
-        globalDiscordTransport.flush(this.options as any).catch(error => { // Cast to any for compatibility
-          console.error(`Error flushing Discord transport:`, error);
-        })
-      );
-    }
+    await Promise.allSettled(flushPromises);
+  }
+}
 
-    await Promise.all(flushPromises);
-  },
+export const logger: JellyLoggerImpl = new JellyLoggerImpl();
 
-  addTransport(transport: Transport): void {
-    if (!this.options.transports) {
-      this.options.transports = [];
-    }
-    this.options.transports.push(transport);
-  },
-
-  removeTransport(transport: Transport): void {
-    if (!this.options.transports) return;
-    this.options.transports = this.options.transports.filter(t => t !== transport);
-  },
-
-  clearTransports(): void {
-    this.options.transports = [];
-  },
-
-  setTransports(transports: Transport[]): void {
-    this.options.transports = transports;
-  },
-};
+// Export types for external use
+export type { BaseLogger, ChildLoggerOptions } from './types';

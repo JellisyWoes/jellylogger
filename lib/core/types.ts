@@ -4,12 +4,17 @@ import type { LogLevel } from './constants';
  * Represents a single log entry.
  */
 export interface LogEntry {
+  /** ISO timestamp string */
   timestamp: string;
+  /** Numeric log level */
   level: LogLevel;
+  /** String representation of log level */
   levelName: string;
+  /** Primary log message */
   message: string;
-  args: unknown[];
-  /** Structured data for the log entry */
+  /** Processed arguments from processLogArgs function */
+  args: { processedArgs: unknown[]; hasComplexArgs: boolean };
+  /** Optional structured data object */
   data?: Record<string, unknown>;
 }
 
@@ -28,7 +33,25 @@ export type CustomConsoleColors = Partial<{
   [LogLevel.INFO]: string;
   [LogLevel.DEBUG]: string;
   [LogLevel.TRACE]: string;
-}>;
+}> & {
+  [key: string]: string | undefined;
+};
+
+/**
+ * Interface for pluggable formatters.
+ */
+export interface LogFormatter {
+  /**
+   * Format a log entry into a string.
+   * @param entry - The log entry to format
+   * @param options - Optional console colors for colorized output
+   * @returns Formatted log string
+   */
+  format(entry: LogEntry, options?: {
+    consoleColors?: CustomConsoleColors;
+    useColors?: boolean;
+  }): string;
+}
 
 /**
  * Options for transport operations.
@@ -136,11 +159,6 @@ export interface RedactionConfig {
   maxDepth?: number;
 }
 
-// Forward declaration to avoid circular dependency
-export interface LogFormatter {
-  format(entry: LogEntry): string;
-}
-
 /**
  * Interface for logger configuration options.
  */
@@ -192,6 +210,7 @@ export interface BaseLogger {
   debug(message: string, ...args: unknown[]): void;
   trace(message: string, ...args: unknown[]): void;
   child(childOptions?: ChildLoggerOptions): ChildLogger;
+  flushAll(): Promise<void>;
 }
 
 // Forward declaration for ChildLogger

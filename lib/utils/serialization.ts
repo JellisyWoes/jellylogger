@@ -1,5 +1,3 @@
-import { isRecord, isErrorLike, isPrimitive, mightHaveCircularRefs } from './typeGuards';
-
 export { getTimestamp } from './time';
 
 /**
@@ -31,154 +29,151 @@ export function serializeError(error: Error, maxDepth: number = 3): Record<strin
 }
 
 /**
- * Safely converts unknown arguments to serializable format with circular reference detection.
- * @param args - Arguments to process
- * @returns Processed arguments safe for serialization
+ * Process log arguments into a structured format for logging.
  */
-export function processLogArgs(args: unknown[]): unknown[] {
-  const seen = new WeakSet<object>();
-  const maxDepth = 10; // Prevent infinite recursion on deeply nested objects
-  
-  function processValue(value: unknown, depth = 0): unknown {
-    // Prevent stack overflow on deeply nested structures
-    if (depth > maxDepth) {
-      return '[Max Depth Exceeded]';
-    }
+export function processLogArgs(args: unknown[]): { processedArgs: unknown[]; hasComplexArgs: boolean } {
+  const processedArgs: unknown[] = [];
+  let hasComplexArgs = false;
 
-    // Handle primitives first (most common case)
-    if (isPrimitive(value)) {
-      return value;
-    }
-
-    // Handle special primitive-like cases
-    if (typeof value === 'bigint') {
-      return value.toString() + 'n';
-    }
-    if (typeof value === 'symbol') {
-      return value.toString();
-    }
-    if (typeof value === 'function') {
-      return `[Function: ${(value as Function).name || 'anonymous'}]`;
-    }
-
-    // Handle Error instances specifically
-    if (value instanceof Error) {
-      return serializeError(value);
-    }
-
-    // Handle null explicitly (typeof null === 'object')
-    if (value === null) {
-      return null;
-    }
-
-    // For non-null objects, check for circular references
-    if (mightHaveCircularRefs(value)) {
-      if (typeof value === 'object' && value !== null) {
-        if (seen.has(value)) {
-          return '[Circular Reference]';
-        }
-        seen.add(value);
-      }
-    }
-
-    // Handle built-in object types
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-    if (value instanceof RegExp) {
-      return value.toString();
-    }
-    if (value instanceof Set) {
+  for (const arg of args) {
+    if (arg instanceof Error) {
+      processedArgs.push(serializeError(arg));
+      hasComplexArgs = true;
+    } else if (typeof arg === 'object' && arg !== null) {
       try {
-        return `[Set: ${Array.from(value).map(v => processValue(v, depth + 1))}]`;
+        // Test if the object can be JSON serialized
+        JSON.stringify(arg);
+        processedArgs.push(arg);
+        hasComplexArgs = true;
       } catch {
-        return `[Set: ${value.size} items]`;
+        // Handle circular references or non-serializable objects
+        processedArgs.push(createSafeObject(arg));
+        hasComplexArgs = true;
       }
-    }
-    if (value instanceof Map) {
-      try {
-        const entries = Array.from(value.entries()).map(([k, v]) => [
-          processValue(k, depth + 1), 
-          processValue(v, depth + 1)
-        ]);
-        return `[Map: ${entries}]`;
-      } catch {
-        return `[Map: ${value.size} entries]`;
+    } else {
+      processedArgs.push(arg);
+      // Only mark as complex if it's actually complex (not primitive strings, numbers, booleans)
+      if (typeof arg !== 'string' && typeof arg !== 'number' && typeof arg !== 'boolean' && arg !== null && arg !== undefined) {
+        hasComplexArgs = true;
       }
-    }
-
-    // Handle Arrays
-    if (Array.isArray(value)) {
-      try {
-        return value.map((item, index) => {
-          try {
-            return processValue(item, depth + 1);
-          } catch {
-            return `[Array Item ${index}: Processing Error]`;
-          }
-        });
-      } catch {
-        return `[Array: ${value.length} items - Processing Error]`;
-      }
-    }
-    
-    // Handle Error-like objects
-    if (isErrorLike(value)) {
-      const v = value as { name?: unknown; message?: unknown; stack?: unknown; cause?: unknown };
-      return {
-        name: v.name !== undefined ? String(v.name) : undefined,
-        message: v.message !== undefined ? String(v.message) : undefined,
-        stack: typeof v.stack === 'string' ? v.stack : undefined,
-        ...(v.cause !== undefined ? { cause: processValue(v.cause, depth + 1) } : {})
-      };
-    }
-    
-    // Handle plain objects and other object types
-    if (typeof value === 'object') {
-      try {
-        // For non-plain objects, include type information
-        const objectType = Object.prototype.toString.call(value);
-        const isPlainObject = isRecord(value);
-        
-        const result: Record<string, unknown> = {};
-        
-        // Add type hint for non-plain objects
-        if (!isPlainObject) {
-          result['__type__'] = objectType;
-        }
-        
-        // Process enumerable properties with error handling
-        for (const key in value) {
-          if (Object.prototype.hasOwnProperty.call(value, key)) {
-            try {
-              const propValue = (value as Record<string, unknown>)[key];
-              result[key] = processValue(propValue, depth + 1);
-            } catch (error) {
-              result[key] = `[Property Error: ${error instanceof Error ? error.message : 'Unknown'}]`;
-            }
-          }
-        }
-        
-        return result;
-      } catch (error) {
-        return `[Object Processing Error: ${error instanceof Error ? error.message : 'Unknown'} - Type: ${Object.prototype.toString.call(value)}]`;
-      }
-    }
-    
-    // Fallback for truly unknown types
-    try {
-      return String(value);
-    } catch {
-      return '[Unstringifiable Value]';
     }
   }
 
-  return args.map((arg, index) => {
+  return { processedArgs, hasComplexArgs };
+}
+
+/**
+ * Unified circular reference handling for log entries.
+ */
+
+/**
+ * Safely serialize any value, handling circular references and non-serializable objects.
+ */
+export function safeStringify(value: unknown, fallback = '[Non-serializable]'): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  
+  if (typeof value === 'object') {
     try {
-      return processValue(arg);
-    } catch (error) {
-      console.warn(`Failed to process log argument at index ${index}:`, error);
-      return `[Argument ${index}: Processing Failed]`;
+      return JSON.stringify(value, createCircularReplacer());
+    } catch {
+      // For objects that can't be stringified, return a descriptive fallback
+      return `[Object: ${Object.prototype.toString.call(value)}]`;
     }
-  });
+  }
+  
+  try {
+    return String(value);
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Safely serialize for JSON output, with enhanced circular reference handling.
+ */
+export function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, createCircularReplacer());
+  } catch {
+    // Create a safe version of the object
+    return JSON.stringify(createSafeObject(value));
+  }
+}
+
+/**
+ * Create a JSON replacer function that handles circular references.
+ */
+function createCircularReplacer(): (_key: string, value: unknown) => unknown {
+  const seen = new WeakSet();
+  
+  return function(_key: string, value: unknown) {
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    
+    if (seen.has(value)) {
+      return '[Circular Reference]';
+    }
+    
+    seen.add(value);
+    return value;
+  };
+}
+
+/**
+ * Create a safe version of any object for JSON serialization.
+ */
+export function createSafeObject(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => {
+      try {
+        JSON.stringify(item);
+        return item;
+      } catch {
+        return '[Non-serializable Array Item]';
+      }
+    });
+  }
+  
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    try {
+      JSON.stringify(value);
+      safe[key] = value;
+    } catch {
+      safe[key] = '[Non-serializable Value]';
+    }
+  }
+  
+  return safe;
+}
+
+/**
+ * Safely process log arguments for display.
+ */
+export function safeProcessArgs(args: unknown[] | { processedArgs: unknown[]; hasComplexArgs: boolean }): string[] {
+  // Handle both old array format and new processLogArgs result format
+  const argsArray = Array.isArray(args) ? args : args.processedArgs;
+  return argsArray.map(arg => safeStringify(arg));
+}
+
+/**
+ * Safely process log data for display.
+ */
+export function safeProcessData(data: unknown): string {
+  if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
+    return '';
+  }
+  
+  try {
+    return JSON.stringify(data, createCircularReplacer());
+  } catch {
+    return '[Data - Processing Error]';
+  }
 }
