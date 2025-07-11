@@ -1,0 +1,41 @@
+# Prettier ignore patterns
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+out/
+build/
+
+# Logs
+*.log
+logs/
+test-logs/
+
+# Coverage reports
+coverage/
+
+# Lock files
+package-lock.json
+yarn.lock
+bun.lockb
+
+# Generated files
+*.d.ts
+
+# Test artifacts
+.nyc_output/
+*.lcov
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
