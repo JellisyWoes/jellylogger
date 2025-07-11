@@ -1,4 +1,4 @@
-  /**
+/**
  * Custom redaction function type for user-defined redaction logic.
  */
 export type CustomRedactor = (value: unknown, context: RedactionContext) => unknown;
@@ -60,52 +60,52 @@ export interface FieldRedactionConfig {
 export interface RedactionConfig {
   /** Target log entry fields to apply redaction to. Default: ['args', 'data', 'message'] */
   fields?: string[];
-  
+
   /** Keys to redact in structured data and objects. Supports dot notation for nested keys (e.g., 'user.password') and wildcards (e.g., '*.token', 'user.*') */
   keys?: string[];
-  
+
   /** Regular expressions for key matching. More flexible than string keys. */
   keyPatterns?: RegExp[];
-  
+
   /** Regular expressions to match and redact values regardless of their keys */
   valuePatterns?: RegExp[];
-  
+
   /** Whether to redact sensitive patterns in log messages and string arguments. Default: false */
   redactStrings?: boolean;
-  
+
   /** String patterns to redact in messages and string args (e.g., credit card numbers, SSNs) */
   stringPatterns?: RegExp[];
-  
+
   /** Paths/keys to whitelist from redaction (takes precedence over redaction rules) */
   whitelist?: string[];
-  
+
   /** Regular expressions for whitelisting paths/keys */
   whitelistPatterns?: RegExp[];
-  
+
   /** Per-field or per-path specific redaction configurations */
   fieldConfigs?: Record<string, FieldRedactionConfig>;
-  
+
   /** Custom redaction function that takes precedence over built-in redaction */
   customRedactor?: CustomRedactor;
-  
+
   /** Replacement text for redacted values or a function for custom replacement. Default: '[REDACTED]' */
   replacement?: string | ((value: any, context: RedactionContext) => string);
-  
+
   /** Whether to perform case-insensitive key matching. Default: true */
   caseInsensitive?: boolean;
-  
+
   /** Where to apply redaction: 'console', 'file', or 'both'. Default: 'both' */
   redactIn?: 'console' | 'file' | 'both';
-  
+
   /** Whether to log when redaction occurs for debugging/auditing. Default: false */
   auditRedaction?: boolean;
-  
+
   /** Custom audit hook function for handling redaction events */
   auditHook?: AuditHook;
-  
+
   /** Whether to deep clone objects before redaction to avoid mutating originals. Default: true */
   deepClone?: boolean;
-  
+
   /** Maximum depth for recursive redaction to prevent infinite loops. Default: 10 */
   maxDepth?: number;
 }

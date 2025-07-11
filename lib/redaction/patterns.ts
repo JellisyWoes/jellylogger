@@ -7,18 +7,14 @@ import type { RedactionConfig, RedactionContext } from './config';
 function globToRegex(pattern: string, caseInsensitive: boolean = true): RegExp {
   // Handle ** patterns (match any path segments including dots)
   if (pattern.includes('**')) {
-    let regexPattern = pattern
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*\*/g, '.*');
-    
+    const regexPattern = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '.*');
+
     const flags = caseInsensitive ? 'i' : '';
     return new RegExp(`^${regexPattern}$`, flags);
   }
-  
+
   // Handle single * patterns (match any characters except dots for path safety)
-  let regexPattern = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '[^.]*');
+  const regexPattern = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^.]*');
 
   const flags = caseInsensitive ? 'i' : '';
   return new RegExp(`^${regexPattern}$`, flags);
@@ -47,12 +43,12 @@ export function shouldRedactKey(keyPath: string, key: string, config: RedactionC
       if (redactKey.includes('*')) {
         // Convert glob pattern to regex for comprehensive matching
         const globRegex = globToRegex(redactKey, caseInsensitive);
-        
+
         // Test against full path (most important for dot notation like "user.profile.email")
         if (globRegex.test(keyPath)) {
           return true;
         }
-        
+
         // Test against just the key name
         if (globRegex.test(key)) {
           return true;
@@ -109,10 +105,10 @@ export function isWhitelisted(keyPath: string, key: string, config: RedactionCon
   if (config.whitelist) {
     for (const whitelistKey of config.whitelist) {
       // Direct key match
-      const keyMatches = caseInsensitive 
+      const keyMatches = caseInsensitive
         ? key.toLowerCase() === whitelistKey.toLowerCase()
         : key === whitelistKey;
-      
+
       // Path match
       const pathMatches = caseInsensitive
         ? keyPath.toLowerCase() === whitelistKey.toLowerCase()
@@ -160,7 +156,11 @@ export function shouldRedactValue(value: any, config: RedactionConfig): boolean 
 /**
  * Redacts sensitive patterns in a string with enhanced context support.
  */
-export function redactString(str: string, config: RedactionConfig, context?: RedactionContext): string {
+export function redactString(
+  str: string,
+  config: RedactionConfig,
+  context?: RedactionContext,
+): string {
   if (!config.redactStrings || !config.stringPatterns || config.stringPatterns.length === 0) {
     return str;
   }
@@ -170,9 +170,12 @@ export function redactString(str: string, config: RedactionConfig, context?: Red
   for (const pattern of config.stringPatterns) {
     if (typeof config.replacement === 'function') {
       // For function replacements, we need to call the function for each match
-      result = result.replace(pattern, (match) => {
-        const ctx = context || { key: '', path: '', field: '', originalValue: match };
-        return (config.replacement as (value: any, context: RedactionContext) => string)(match, ctx);
+      result = result.replace(pattern, match => {
+        const ctx = context ?? { key: '', path: '', field: '', originalValue: match };
+        return (config.replacement as (value: any, context: RedactionContext) => string)(
+          match,
+          ctx,
+        );
       });
     } else {
       const replacement = config.replacement ?? '[REDACTED]';

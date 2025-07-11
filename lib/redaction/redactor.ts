@@ -1,7 +1,12 @@
-import { isRecord, isPrimitive, mightHaveCircularRefs } from '../utils/typeGuards';
-import type { RedactionConfig, RedactionContext, RedactionAuditEvent, FieldRedactionConfig } from './config';
+import { isPrimitive, isRecord, mightHaveCircularRefs } from '../utils/typeGuards';
+import type {
+  FieldRedactionConfig,
+  RedactionAuditEvent,
+  RedactionConfig,
+  RedactionContext,
+} from './config';
 import type { LogEntry } from '../core/types';
-import { shouldRedactKey, shouldRedactValue, redactString, isWhitelisted } from './patterns';
+import { isWhitelisted, redactString, shouldRedactKey, shouldRedactValue } from './patterns';
 
 /**
  * Default log entry fields that support redaction.
@@ -17,7 +22,7 @@ function triggerAudit(
   before: unknown,
   after: unknown,
   config: RedactionConfig,
-  rule?: string
+  rule?: string,
 ): void {
   if (!config.auditRedaction && !config.auditHook) {
     return;
@@ -29,7 +34,7 @@ function triggerAudit(
     before,
     after,
     timestamp: new Date(),
-    rule
+    rule,
   };
 
   if (config.auditRedaction) {
@@ -62,8 +67,8 @@ function getFieldConfig(path: string, config: RedactionConfig): FieldRedactionCo
   for (const [pattern, fieldConfig] of Object.entries(config.fieldConfigs)) {
     if (pattern.includes('*')) {
       const globRegex = new RegExp(
-        '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
-        config.caseInsensitive ? 'i' : ''
+        `^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`,
+        config.caseInsensitive ? 'i' : '',
       );
       if (globRegex.test(path)) {
         return fieldConfig;
@@ -81,7 +86,7 @@ function applyReplacement(
   value: unknown,
   context: RedactionContext,
   config: RedactionConfig,
-  fieldConfig?: FieldRedactionConfig
+  fieldConfig?: FieldRedactionConfig,
 ): unknown {
   // Use field-specific replacement if available
   if (fieldConfig?.replacement) {
@@ -101,11 +106,18 @@ function applyReplacement(
 /**
  * Checks if an object needs redaction to avoid unnecessary cloning.
  */
-export function needsRedaction(obj: unknown, config: RedactionConfig, path: string = '', seen: WeakSet<object> = new WeakSet()): boolean {
+export function needsRedaction(
+  obj: unknown,
+  config: RedactionConfig,
+  path: string = '',
+  seen: WeakSet<object> = new WeakSet(),
+): boolean {
   // Check if there are any redaction rules configured
-  if ((!config.keys || config.keys.length === 0) && 
-      (!config.keyPatterns || config.keyPatterns.length === 0) &&
-      (!config.valuePatterns || config.valuePatterns.length === 0)) {
+  if (
+    (!config.keys || config.keys.length === 0) &&
+    (!config.keyPatterns || config.keyPatterns.length === 0) &&
+    (!config.valuePatterns || config.valuePatterns.length === 0)
+  ) {
     return false;
   }
 
@@ -149,21 +161,21 @@ export function needsRedaction(obj: unknown, config: RedactionConfig, path: stri
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
           const currentPath = path ? `${path}.${key}` : key;
-          
+
           try {
             // Check if key should be redacted
             if (shouldRedactKey(currentPath, key, config)) {
               return true;
             }
-            
+
             // Get property value safely
             const propValue = obj[key];
-            
+
             // Check if value should be redacted
             if (shouldRedactValue(propValue, config)) {
               return true;
             }
-            
+
             // Recursively check nested objects
             if (needsRedaction(propValue, config, currentPath, seen)) {
               return true;
@@ -191,7 +203,7 @@ export function redactObject(
   config: RedactionConfig,
   context: Partial<RedactionContext> = {},
   seen: WeakSet<object> = new WeakSet(),
-  depth: number = 0
+  depth: number = 0,
 ): unknown {
   const maxDepth = config.maxDepth ?? 10;
   if (depth >= maxDepth) {
@@ -203,7 +215,7 @@ export function redactObject(
     path: context.path ?? '',
     field: context.field ?? '',
     originalValue: obj,
-    target: context.target
+    target: context.target,
   };
 
   // Check if field-specific redaction is disabled
@@ -230,7 +242,14 @@ export function redactObject(
       try {
         const result = config.customRedactor(obj, fullContext);
         if (result !== obj) {
-          triggerAudit('custom', fullContext, obj, result, config, 'global custom redactor on primitive');
+          triggerAudit(
+            'custom',
+            fullContext,
+            obj,
+            result,
+            config,
+            'global custom redactor on primitive',
+          );
           return result;
         }
       } catch (error) {
@@ -267,7 +286,7 @@ export function redactObject(
           const itemContext = {
             ...fullContext,
             key: `[${index}]`,
-            path: fullContext.path ? `${fullContext.path}[${index}]` : `[${index}]`
+            path: fullContext.path ? `${fullContext.path}[${index}]` : `[${index}]`,
           };
           return redactObject(item, config, itemContext, seen, depth + 1);
         } catch {
@@ -283,22 +302,22 @@ export function redactObject(
   try {
     if (isRecord(obj)) {
       const newObj: Record<string, unknown> = {};
-      
+
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
           const currentPath = fullContext.path ? `${fullContext.path}.${key}` : key;
-          
+
           try {
             const propValue = obj[key];
             const propContext: RedactionContext = {
               ...fullContext,
               key,
               path: currentPath,
-              originalValue: propValue
+              originalValue: propValue,
             };
 
             const propFieldConfig = getFieldConfig(currentPath, config);
-            
+
             // 1. Check for field-specific disable
             if (propFieldConfig?.disabled) {
               newObj[key] = propValue;
@@ -309,11 +328,21 @@ export function redactObject(
             if (propFieldConfig?.customRedactor) {
               try {
                 const result = propFieldConfig.customRedactor(propValue, propContext);
-                triggerAudit('custom', propContext, propValue, result, config, 'property field-specific custom redactor');
+                triggerAudit(
+                  'custom',
+                  propContext,
+                  propValue,
+                  result,
+                  config,
+                  'property field-specific custom redactor',
+                );
                 newObj[key] = result;
                 continue;
               } catch (error) {
-                console.warn(`[REDACTION] Error in property field-specific custom redactor for path '${currentPath}':`, error);
+                console.warn(
+                  `[REDACTION] Error in property field-specific custom redactor for path '${currentPath}':`,
+                  error,
+                );
                 // Fall-through: if custom redactor fails, other rules might still apply or original value kept.
               }
             }
@@ -322,13 +351,24 @@ export function redactObject(
             if (config.customRedactor) {
               try {
                 const result = config.customRedactor(propValue, propContext);
-                if (result !== propValue) { // Only use if it actually changed the value
-                  triggerAudit('custom', propContext, propValue, result, config, 'global custom redactor');
+                if (result !== propValue) {
+                  // Only use if it actually changed the value
+                  triggerAudit(
+                    'custom',
+                    propContext,
+                    propValue,
+                    result,
+                    config,
+                    'global custom redactor',
+                  );
                   newObj[key] = result;
                   continue;
                 }
               } catch (error) {
-                console.warn(`[REDACTION] Error in global custom redactor for path '${currentPath}':`, error);
+                console.warn(
+                  `[REDACTION] Error in global custom redactor for path '${currentPath}':`,
+                  error,
+                );
               }
             }
 
@@ -337,9 +377,13 @@ export function redactObject(
             const redactDueToGlobalKeyPattern = shouldRedactKey(currentPath, key, config); // This already checks whitelist
             const redactDueToGlobalValuePattern = shouldRedactValue(propValue, config);
 
-            if (redactDueToFieldConfigReplacement || redactDueToGlobalKeyPattern || redactDueToGlobalValuePattern) {
+            if (
+              redactDueToFieldConfigReplacement ||
+              redactDueToGlobalKeyPattern ||
+              redactDueToGlobalValuePattern
+            ) {
               const result = applyReplacement(propValue, propContext, config, propFieldConfig);
-              
+
               let auditRule = 'unknown redaction rule';
               if (redactDueToFieldConfigReplacement) {
                 auditRule = 'field-specific replacement';
@@ -354,16 +398,19 @@ export function redactObject(
               // 5. Recursively process nested objects if no redaction rule applied
               newObj[key] = redactObject(propValue, config, propContext, seen, depth + 1);
             }
-          } catch (e) { 
-            console.warn(`[REDACTION] Error processing property '${key}' at path '${currentPath}':`, e);
-            newObj[key] = obj[key]; 
+          } catch (e) {
+            console.warn(
+              `[REDACTION] Error processing property '${key}' at path '${currentPath}':`,
+              e,
+            );
+            newObj[key] = obj[key];
           }
         }
       }
-      
+
       return newObj;
     }
-    
+
     return obj;
   } catch {
     return obj;
@@ -376,7 +423,7 @@ export function redactObject(
 export function redactLogEntry(
   entry: LogEntry,
   config: RedactionConfig,
-  target?: 'console' | 'file'
+  target?: 'console' | 'file',
 ): LogEntry {
   // Check if redaction is needed
   if (!config) {
@@ -407,28 +454,40 @@ export function redactLogEntry(
     // Base context for operations related to this top-level field
     const baseFieldContext: Pick<RedactionContext, 'field' | 'target'> = {
       field,
-      target
+      target,
     };
 
     try {
       if (field === 'message' && typeof fieldValue === 'string') {
         const messageContext: RedactionContext = {
           ...baseFieldContext,
-          key: '', 
+          key: '',
           path: field, // Path for the message is its field name
           originalValue: fieldValue,
         };
-        
+
         const redactedMessage = redactString(fieldValue, config, messageContext);
         if (redactedMessage !== fieldValue) {
-          triggerAudit('string', messageContext, fieldValue, redactedMessage, config, 'string pattern match');
+          triggerAudit(
+            'string',
+            messageContext,
+            fieldValue,
+            redactedMessage,
+            config,
+            'string pattern match',
+          );
           (newEntry as any)[field] = redactedMessage;
         }
-      } else if (field === 'args' && fieldValue && typeof fieldValue === 'object' && 'processedArgs' in fieldValue) {
+      } else if (
+        field === 'args' &&
+        fieldValue &&
+        typeof fieldValue === 'object' &&
+        'processedArgs' in fieldValue
+      ) {
         // Handle new args structure: { processedArgs: unknown[]; hasComplexArgs: boolean }
         const argsObj = fieldValue as { processedArgs: unknown[]; hasComplexArgs: boolean };
         const processedArgs = Array.isArray(argsObj.processedArgs) ? argsObj.processedArgs : [];
-        
+
         const redactedProcessedArgs = processedArgs.map((arg, index) => {
           if (typeof arg === 'string' && config.redactStrings) {
             const stringRedactionContext: RedactionContext = {
@@ -440,21 +499,21 @@ export function redactLogEntry(
             };
             return redactString(arg, config, stringRedactionContext);
           }
-          
+
           // For redactObject, the 'path' it operates on starts relative to 'arg'.
           // The 'key' it receives in its context is its identifier in the parent (processedArgs array).
           const contextForRedactObject: Partial<RedactionContext> = {
-            field: 'args',       // Top-level field name
-            path: '',            // Path is relative to 'arg' itself for internal matching
+            field: 'args', // Top-level field name
+            path: '', // Path is relative to 'arg' itself for internal matching
             key: `processedArgs[${index}]`, // Key of this item in the processedArgs array
             target: baseFieldContext.target,
           };
           return redactObject(arg, config, contextForRedactObject, new WeakSet(), 0);
         });
-        
+
         (newEntry as any)[field] = {
           ...argsObj,
-          processedArgs: redactedProcessedArgs
+          processedArgs: redactedProcessedArgs,
         };
       } else if (field === 'args' && Array.isArray(fieldValue)) {
         // Legacy support for old args structure (array)
@@ -469,13 +528,13 @@ export function redactLogEntry(
             };
             return redactString(arg, config, stringRedactionContext);
           }
-          
+
           // For redactObject, the 'path' it operates on starts relative to 'arg'.
           // The 'key' it receives in its context is its identifier in the parent (args array).
           const contextForRedactObject: Partial<RedactionContext> = {
-            field: 'args',       // Top-level field name
-            path: '',            // Path is relative to 'arg' itself for internal matching
-            key: `[${index}]`,   // Key of this item in the args array
+            field: 'args', // Top-level field name
+            path: '', // Path is relative to 'arg' itself for internal matching
+            key: `[${index}]`, // Key of this item in the args array
             target: baseFieldContext.target,
           };
           return redactObject(arg, config, contextForRedactObject, new WeakSet(), 0);
@@ -486,10 +545,16 @@ export function redactLogEntry(
         // The key is the name of the field itself in the log entry.
         const objectFieldContext: Partial<RedactionContext> = {
           ...baseFieldContext, // field, target
-          path: '',            // Path for redactObject starts empty, relative to 'fieldValue'
-          key: field,          // Key of this field in the log entry (e.g., "data")
+          path: '', // Path for redactObject starts empty, relative to 'fieldValue'
+          key: field, // Key of this field in the log entry (e.g., "data")
         };
-        (newEntry as any)[field] = redactObject(fieldValue, config, objectFieldContext, new WeakSet(), 0);
+        (newEntry as any)[field] = redactObject(
+          fieldValue,
+          config,
+          objectFieldContext,
+          new WeakSet(),
+          0,
+        );
       }
     } catch (error) {
       console.warn(`[REDACTION] Error processing field '${field}':`, error);
@@ -506,7 +571,7 @@ export function redactLogEntry(
 export function getRedactedEntry(
   entry: LogEntry,
   redactionConfig?: RedactionConfig,
-  target?: 'console' | 'file'
+  target?: 'console' | 'file',
 ): LogEntry {
   if (!redactionConfig) {
     return entry;
