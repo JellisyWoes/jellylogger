@@ -118,7 +118,7 @@ describe("Redaction", () => {
     });
 
     const fileTransport = new FileTransport("test.log", undefined, {
-      appendFileSync: fs.appendFileSync
+      appendFileSync: appendFileSyncSpy // Use the spy instead of the real fs function
     });
 
     const entry: LogEntry = {

@@ -140,7 +140,8 @@ describe("Logger", () => {
       const transport1 = new ConsoleTransport();
       const transport2 = new FileTransport("test.log", undefined, {
         file: actualMockBunFileFn,
-        write: actualMockBunWriteFn
+        write: actualMockBunWriteFn,
+        appendFileSync: mock(() => {}) // Mock to prevent real file creation
       });
 
       // Spy on both transports

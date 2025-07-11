@@ -20,7 +20,8 @@ describe("Logger flushAll", () => {
     const consoleTransport = new ConsoleTransport();
     const fileTransport = new FileTransport("test.log", undefined, {
       file: actualMockBunFileFn,
-      write: actualMockBunWriteFn
+      write: actualMockBunWriteFn,
+      appendFileSync: mock(() => {}) // Mock to prevent real file creation
     });
     
     const consoleSpy = spyOn(consoleTransport, 'flush').mockResolvedValue(undefined);
@@ -65,7 +66,8 @@ describe("Logger flushAll", () => {
     const consoleTransport = new ConsoleTransport();
     const fileTransport = new FileTransport("test.log", undefined, {
       file: actualMockBunFileFn,
-      write: actualMockBunWriteFn
+      write: actualMockBunWriteFn,
+      appendFileSync: mock(() => {}) // Mock to prevent real file creation
     });
     
     const consoleSpy = spyOn(consoleTransport, 'flush').mockRejectedValue(new Error("Console flush failed"));
