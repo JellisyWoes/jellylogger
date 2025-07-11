@@ -5,7 +5,13 @@ export type { BaseLogger, ChildLoggerOptions, Transport, JellyLogger } from './c
 
 // Log levels and types
 export { LogLevel } from './core/constants';
-export type { LoggerOptions, CustomConsoleColors, LogEntry, RedactionConfig, TransportOptions } from './core/types';
+export type {
+  LoggerOptions,
+  CustomConsoleColors,
+  LogEntry,
+  RedactionConfig,
+  TransportOptions,
+} from './core/types';
 export type { LogRotationConfig } from './transports/FileTransport';
 
 // Transports
@@ -21,7 +27,12 @@ export { DefaultFormatter } from './formatters/DefaultFormatter';
 // Helper functions
 export { isRecord, isErrorLike } from './utils/typeGuards';
 export { getTimestamp, serializeError, processLogArgs } from './utils/serialization';
-export { toAnsiColor, DEFAULT_COLORS, ENHANCED_DEFAULT_COLORS, getFormatterColors } from './utils/colors';
+export {
+  toAnsiColor,
+  DEFAULT_COLORS,
+  ENHANCED_DEFAULT_COLORS,
+  getFormatterColors,
+} from './utils/colors';
 
 // Transport preset helpers
 export {
@@ -31,19 +42,19 @@ export {
   useAllTransports,
   addFileLogging,
   addDiscordLogging,
-  addWebSocketLogging
+  addWebSocketLogging,
 } from './utils/presets';
 
 // Re-export redaction functionality
-export { 
-  shouldRedactKey, 
-  shouldRedactValue, 
-  redactString, 
+export {
+  shouldRedactKey,
+  shouldRedactValue,
+  redactString,
   redactObject,
   getRedactedEntry,
   needsRedaction,
   redactLogEntry,
-  isWhitelisted
+  isWhitelisted,
 } from './redaction';
 
 // Add missing type exports that are in the .d.ts
