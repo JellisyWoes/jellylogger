@@ -90,7 +90,7 @@ describe("ChildLogger", () => {
 
       expect(loggedEntries).toHaveLength(1);
       expect(loggedEntries[0].data).toEqual({ requestId: "req_123" });
-      expect(loggedEntries[0].args).toEqual(["arg1", 42]);
+      expect(loggedEntries[0].args.processedArgs).toEqual(["arg1", 42]);
       expect(loggedEntries[0].message).toBe("[REQUEST] Multiple args test");
     });
 
@@ -277,7 +277,8 @@ describe("ChildLogger", () => {
 
       expect(loggedEntries).toHaveLength(1);
       expect(loggedEntries[0].message).toBe("[ERROR] Error occurred");
-      expect(loggedEntries[0].args[0]).toEqual(expect.objectContaining({
+      // Error objects are placed in the data field in the current implementation
+      expect(loggedEntries[0].data).toEqual(expect.objectContaining({
         name: "Error",
         message: "Test error"
       }));

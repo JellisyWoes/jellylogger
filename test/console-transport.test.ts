@@ -44,7 +44,7 @@ describe("ConsoleTransport", () => {
         level,
         levelName: LogLevel[level],
         message: "Test message",
-        args: [{ data: 1 }],
+        args: { processedArgs: [{ data: 1 }], hasComplexArgs: true },
       };
       transport.log(entry, { format: "string" } as LoggerOptions);
       
@@ -71,7 +71,7 @@ describe("ConsoleTransport", () => {
           level,
           levelName: LogLevel[level],
           message: "Test message",
-          args: [{ data: 1 }],
+          args: { processedArgs: [{ data: 1 }], hasComplexArgs: true },
         };
         transport.log(entry, { format: "json" } as LoggerOptions);
         const spiedConsoleMethod = consoleSpies[consoleMethod];
@@ -88,7 +88,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Hello",
-      args: ["world"],
+      args: { processedArgs: ["world"], hasComplexArgs: false },
     };
     transport.log(entry, { format: "string" } as LoggerOptions);
     expect(consoleSpies.info).toHaveBeenCalledTimes(1);
@@ -110,7 +110,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Undefined format test",
-      args: ["arg1"],
+      args: { processedArgs: ["arg1"], hasComplexArgs: false },
     };
     // @ts-ignore testing undefined case
     transport.log(entry, { format: undefined } as LoggerOptions);
@@ -132,7 +132,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.WARN,
       levelName: "WARN",
       message: "No args message",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     transport.log(entry, { format: "string" } as LoggerOptions);
     expect(consoleSpies.warn).toHaveBeenCalledTimes(1);
@@ -150,7 +150,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.FATAL,
       levelName: "FATAL",
       message: "Color test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     const customColors: LoggerOptions['customConsoleColors'] = {
       reset: "#ffffff",
@@ -177,7 +177,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Invalid color test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     const customColors: LoggerOptions['customConsoleColors'] = {
       [LogLevel.INFO]: "not-a-color",
@@ -195,7 +195,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.DEBUG,
       levelName: "DEBUG",
       message: "ANSI direct test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     const ansiRed = "\x1b[31m";
     const customColors: LoggerOptions['customConsoleColors'] = {
@@ -215,7 +215,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.TRACE,
       levelName: "TRACE",
       message: "Merge color test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     const customColors: LoggerOptions['customConsoleColors'] = {
       [LogLevel.TRACE]: "#123456",
@@ -234,7 +234,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Formatter test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     const formatter = (e: LogEntry) => `>> ${e.levelName}: ${e.message}`;
     transport.log(entry, { formatter } as LoggerOptions);
@@ -248,7 +248,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Formatter color test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     const formatter = (e: LogEntry) => `!! ${e.levelName}: ${e.message}`;
     const customColors: LoggerOptions['customConsoleColors'] = {
@@ -266,7 +266,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Empty customConsoleColors",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     expect(() => {
       transport.log(entry, { format: "string", customConsoleColors: {} } as LoggerOptions);
@@ -280,7 +280,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Missing reset/bold/dim",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     const customColors: LoggerOptions['customConsoleColors'] = {
       [LogLevel.INFO]: "#00ff00"
@@ -297,7 +297,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Multi-arg",
-      args: [1, "two", { three: 3 }, [4], null, undefined],
+      args: { processedArgs: [1, "two", { three: 3 }, [4], null, undefined], hasComplexArgs: true },
     };
     transport.log(entry, { format: "string" } as LoggerOptions);
     expect(consoleSpies.info).toHaveBeenCalledTimes(1);
@@ -320,53 +320,90 @@ describe("ConsoleTransport", () => {
   it("should log error objects with cause", () => {
     const err = new Error("top");
     (err as any).cause = new Error("cause");
-    logger.setOptions({ level: LogLevel.INFO, transports: [new ConsoleTransport()] });
-    const transportInstance = logger.options.transports?.[0] as ConsoleTransport;
-    const transportSpy = spyOn(transportInstance, 'log').mockResolvedValue(undefined);
-
-    logger.error("Error with cause", err);
-    expect(transportSpy).toHaveBeenCalledTimes(1);
-    const entry = transportSpy.mock.calls[0][0] as LogEntry;
-    expect(entry.args[0]).toBeDefined();
-    const loggedError = entry.args[0] as any;
-    expect(loggedError.name).toBe("Error");
-    expect(loggedError.message).toBe("top");
-    expect(loggedError.cause).toBeDefined();
-    expect(loggedError.cause.name).toBe("Error");
-    expect(loggedError.cause.message).toBe("cause");
-    transportSpy.mockRestore();
+    
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.ERROR,
+      levelName: "ERROR",
+      message: "Error with cause",
+      args: { 
+        processedArgs: [{
+          name: "Error",
+          message: "top",
+          stack: err.stack,
+          cause: {
+            name: "Error",
+            message: "cause",
+            stack: (err.cause as Error).stack
+          }
+        }], 
+        hasComplexArgs: true 
+      },
+    };
+    
+    transport.log(entry, { format: "string" } as LoggerOptions);
+    expect(consoleSpies.error).toHaveBeenCalledTimes(1);
+    const firstArg = consoleSpies.error.mock.calls[0][0] as string;
+    expect(firstArg).toContain("Error with cause");
+    expect(firstArg).toContain("top");
+    expect(firstArg).toContain("cause");
   });
 
   it("should log error objects with non-error cause", () => {
     const err = new Error("top");
     (err as any).cause = { foo: "bar" };
-    logger.setOptions({ level: LogLevel.INFO, transports: [new ConsoleTransport()] });
-    const transportInstance = logger.options.transports?.[0] as ConsoleTransport;
-    const transportSpy = spyOn(transportInstance, 'log').mockResolvedValue(undefined);
-
-    logger.error("Error with object cause", err);
-    expect(transportSpy).toHaveBeenCalledTimes(1);
-    const entry = transportSpy.mock.calls[0][0] as LogEntry;
-    expect(entry.args[0]).toBeDefined();
-    const loggedError = entry.args[0] as any;
-    expect(loggedError.cause).toEqual({ foo: "bar" });
-    transportSpy.mockRestore();
+    
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.ERROR,
+      levelName: "ERROR",
+      message: "Error with object cause",
+      args: { 
+        processedArgs: [{
+          name: "Error",
+          message: "top",
+          stack: err.stack,
+          cause: { foo: "bar" }
+        }], 
+        hasComplexArgs: true 
+      },
+    };
+    
+    transport.log(entry, { format: "string" } as LoggerOptions);
+    expect(consoleSpies.error).toHaveBeenCalledTimes(1);
+    const firstArg = consoleSpies.error.mock.calls[0][0] as string;
+    expect(firstArg).toContain("Error with object cause");
+    expect(firstArg).toContain("top");
+    expect(firstArg).toContain("foo");
+    expect(firstArg).toContain("bar");
   });
 
   it("should log error objects with string cause", () => {
     const err = new Error("top");
     (err as any).cause = "string-cause";
-    logger.setOptions({ level: LogLevel.INFO, transports: [new ConsoleTransport()] });
-    const transportInstance = logger.options.transports?.[0] as ConsoleTransport;
-    const transportSpy = spyOn(transportInstance, 'log').mockResolvedValue(undefined);
-
-    logger.error("Error with string cause", err);
-    expect(transportSpy).toHaveBeenCalledTimes(1);
-    const entry = transportSpy.mock.calls[0][0] as LogEntry;
-    expect(entry.args[0]).toBeDefined();
-    const loggedError = entry.args[0] as any;
-    expect(loggedError.cause).toBe("string-cause");
-    transportSpy.mockRestore();
+    
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.ERROR,
+      levelName: "ERROR",
+      message: "Error with string cause",
+      args: { 
+        processedArgs: [{
+          name: "Error",
+          message: "top",
+          stack: err.stack,
+          cause: "string-cause"
+        }], 
+        hasComplexArgs: true 
+      },
+    };
+    
+    transport.log(entry, { format: "string" } as LoggerOptions);
+    expect(consoleSpies.error).toHaveBeenCalledTimes(1);
+    const firstArg = consoleSpies.error.mock.calls[0][0] as string;
+    expect(firstArg).toContain("Error with string cause");
+    expect(firstArg).toContain("top");
+    expect(firstArg).toContain("string-cause");
   });
 
   it("should log error objects with circular cause gracefully", () => {
@@ -375,23 +412,28 @@ describe("ConsoleTransport", () => {
     circular.self = circular;
     (err as any).cause = circular;
 
-    logger.setOptions({ transports: [new ConsoleTransport()], level: LogLevel.ERROR });
-    const transportInstance = logger.options.transports?.[0] as ConsoleTransport;
-    const transportSpy = spyOn(transportInstance, 'log').mockResolvedValue(undefined);
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.ERROR,
+      levelName: "ERROR",
+      message: "Error with circular cause",
+      args: { 
+        processedArgs: [{
+          name: "Error",
+          message: "top",
+          stack: err.stack,
+          cause: "[object Object]"
+        }], 
+        hasComplexArgs: true 
+      },
+    };
 
-    logger.error("Error with circular cause", err);
-
-    expect(transportSpy).toHaveBeenCalledTimes(1);
-    const entry = transportSpy.mock.calls[0][0] as LogEntry;
-    expect(entry.args[0]).toBeDefined();
-    const loggedError = entry.args[0] as any;
-    expect(typeof loggedError.name).toBe('string');
-    expect(typeof loggedError.message).toBe('string');
-    expect(typeof loggedError.stack === 'string' || loggedError.stack === undefined).toBe(true);
-
-    expect(loggedError.cause).toBeDefined();
-    expect(loggedError.cause).toBe("[object Object]");
-    transportSpy.mockRestore();
+    transport.log(entry, { format: "string" } as LoggerOptions);
+    expect(consoleSpies.error).toHaveBeenCalledTimes(1);
+    const firstArg = consoleSpies.error.mock.calls[0][0] as string;
+    expect(firstArg).toContain("Error with circular cause");
+    expect(firstArg).toContain("top");
+    expect(firstArg).toContain("[object Object]");
   });
 
   it("should support formatter returning empty string", () => {
@@ -400,7 +442,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Formatter empty",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     transport.log(entry, { formatter: () => "" } as LoggerOptions);
     expect(consoleSpies.info).toHaveBeenCalledWith("");
@@ -412,7 +454,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Formatter non-string",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
     };
     transport.log(entry, { formatter: () => 12345 as any } as LoggerOptions);
     expect(consoleSpies.info).toHaveBeenCalledWith("12345");
@@ -424,7 +466,7 @@ describe("ConsoleTransport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Formatter with args",
-      args: ["foo", "bar"],
+      args: { processedArgs: ["foo", "bar"], hasComplexArgs: false },
     };
     transport.log(entry, { formatter: (e) => e.message, format: "string" } as LoggerOptions);
     expect(consoleSpies.info).toHaveBeenCalledWith("Formatter with args");

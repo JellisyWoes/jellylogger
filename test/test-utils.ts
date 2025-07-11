@@ -120,7 +120,7 @@ export class MemoryTransport implements Transport {
         jsonEntry.data = entry.data;
       }
       
-      if (entry.args && entry.args.length > 0) {
+      if (entry.args && entry.args.processedArgs && entry.args.processedArgs.length > 0) {
         jsonEntry.args = entry.args;
       }
       
@@ -137,8 +137,8 @@ export class MemoryTransport implements Transport {
         parts.push(JSON.stringify(entry.data));
       }
       
-      if (entry.args && entry.args.length > 0) {
-        parts.push(...entry.args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)));
+      if (entry.args && entry.args.processedArgs && entry.args.processedArgs.length > 0) {
+        parts.push(...entry.args.processedArgs.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)));
       }
       
       return parts.join(' ');

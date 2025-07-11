@@ -60,7 +60,7 @@ describe("WebSocket Transport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "WebSocket test message",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false },
     };
 
     await transport.log(entry, { format: "string" });
@@ -77,7 +77,7 @@ describe("WebSocket Transport", () => {
       level: LogLevel.ERROR,
       levelName: "ERROR",
       message: "JSON test message",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { errorCode: "WS001" }
     };
 
@@ -99,21 +99,21 @@ describe("WebSocket Transport", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "First message",
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false },
       },
       {
         timestamp: "2023-01-01T12:01:00.000Z",
         level: LogLevel.WARN,
         levelName: "WARN",
         message: "Second message", 
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false },
       },
       {
         timestamp: "2023-01-01T12:02:00.000Z",
         level: LogLevel.ERROR,
         levelName: "ERROR",
         message: "Third message",
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false },
       }
     ];
 
@@ -134,7 +134,7 @@ describe("WebSocket Transport", () => {
       level: LogLevel.DEBUG,
       levelName: "DEBUG",
       message: "Flush test",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false },
     };
 
     await transport.log(entry, { format: "string" });
@@ -153,7 +153,7 @@ describe("WebSocket Transport", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Connection test",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false },
     };
 
     // Should auto-connect when logging

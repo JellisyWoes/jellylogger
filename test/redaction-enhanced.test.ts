@@ -32,7 +32,7 @@ describe("Enhanced Redaction", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Nested key test",
-        args: [],
+        args: { processedArgs: [], hasComplexArgs: false },
         data: { 
           user: { 
             profile: { 
@@ -70,7 +70,7 @@ describe("Enhanced Redaction", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Wildcard redaction test",
-        args: [],
+        args: { processedArgs: [], hasComplexArgs: false },
         data: { 
           user1: { token: "token1" },
           user2: { token: "token2" },
@@ -106,7 +106,7 @@ describe("Enhanced Redaction", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Double wildcard test",
-        args: [],
+        args: { processedArgs: [], hasComplexArgs: false },
         data: { 
           deeply: { 
             nested: { 
@@ -144,7 +144,7 @@ describe("Enhanced Redaction", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Whitelist test",
-        args: [],
+        args: { processedArgs: [], hasComplexArgs: false },
         data: { 
           password: "secret1",
           adminPassword: "secret2",
@@ -181,7 +181,7 @@ describe("Enhanced Redaction", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Regex whitelist test",
-        args: [],
+        args: { processedArgs: [], hasComplexArgs: false },
         data: { 
           password: "secret1",
           publicPassword: "secret2",
@@ -218,7 +218,7 @@ describe("Enhanced Redaction", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Custom redactor test",
-        args: [],
+        args: { processedArgs: [], hasComplexArgs: false },
         data: { 
           password: "secret123",
           apiKey: "key456"
@@ -257,7 +257,7 @@ describe("Enhanced Redaction", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Field config test",
-        args: [],
+        args: { processedArgs: [], hasComplexArgs: false },
         data: { 
           password: "secret123",
           token: "abc456"
@@ -445,7 +445,7 @@ describe("Enhanced Redaction", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Test unified API",
-        args: [],
+        args: { processedArgs: [], hasComplexArgs: false },
         data: { 
           password: "secret",
           custom: "data"
@@ -532,7 +532,7 @@ describe("Enhanced Redaction", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Payment processed with card 4111-1111-1111-1111",
-        args: ["User token_abc123 authenticated"],
+        args: { processedArgs: ["User token_abc123 authenticated"], hasComplexArgs: false },
         data: { 
           user: {
             password: "secret",
@@ -569,7 +569,7 @@ describe("Enhanced Redaction", () => {
       expect(loggedData.message).toBe("Payment processed with card [REDACTED]");
       
       // Args should have token redacted  
-      expect(loggedData.args[0]).toBe("User [REDACTED] authenticated");
+      expect(loggedData.args.processedArgs[0]).toBe("User [REDACTED] authenticated");
       
       // Data should have various redactions
       expect(loggedData.data.user.password).toBe("[REDACTED]");

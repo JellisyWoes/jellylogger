@@ -48,7 +48,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Rate limit test",
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "string" });
@@ -78,7 +78,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Persistent rate limit test",
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "string" });
@@ -116,7 +116,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
         level: LogLevel.ERROR,
         levelName: "ERROR",
         message: "Global rate limit test",
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "string" });
@@ -145,7 +145,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: longMessage,
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "string" });
@@ -179,7 +179,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
           level: LogLevel.INFO,
           levelName: "INFO",
           message: longMessage,
-          args: []
+          args: { processedArgs: [], hasComplexArgs: false }
         };
         await transport.log(entry, { format: "string" });
       }
@@ -210,7 +210,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
         level: LogLevel.FATAL,
         levelName: "FATAL",
         message: `Critical error: ${veryLongDetails}`,
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "string" });
@@ -245,7 +245,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
         level: LogLevel.ERROR,
         levelName: "ERROR",
         message: "Network error test",
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "string" });
@@ -275,7 +275,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Invalid URL test",
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       // Should not throw - errors are handled internally and logged to console
@@ -310,7 +310,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
           level: LogLevel.INFO,
           levelName: "INFO",
           message: `Burst message ${i}`,
-          args: []
+          args: { processedArgs: [], hasComplexArgs: false }
         };
         promises.push(transport.log(entry, { format: "string" }));
       }
@@ -341,7 +341,7 @@ describe("DiscordWebhookTransport Enhanced", () => {
         level: LogLevel.INFO,
         levelName: "INFO",
         message: "Timing test",
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "string" });

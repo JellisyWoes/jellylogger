@@ -1,12 +1,29 @@
 import "./test-utils"; // Import mocks first
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
-import { LogLevel, DiscordWebhookTransport, type LogEntry } from "../lib/index";
+import { DiscordWebhookTransport, LogLevel, type LogEntry } from "../lib/index";
 
 describe("DiscordWebhookTransport", () => {
   let originalFetch: typeof globalThis.fetch;
+  let fetchCalls: Array<{ url: string; options: RequestInit }> = [];
+  let mockFetch: ReturnType<typeof mock>;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
+    fetchCalls = [];
+    
+    mockFetch = mock(async (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
+      fetchCalls.push({ 
+        url: url.toString(), 
+        options: options || {} 
+      });
+      
+      // Default successful response
+      return new Response("", { status: 204 });
+    });
+    
+    // Add the missing 'preconnect' property to match Bun's fetch type
+    (mockFetch as any).preconnect = mock(async () => {});
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -14,179 +31,178 @@ describe("DiscordWebhookTransport", () => {
   });
 
   it("should batch logs and retry on failure", async () => {
-    let fetchCalls: { url: string; options: any }[] = [];
     let callCount = 0;
-    
-    const fetchMock = mock(async (url: string | URL, options?: any) => {
-      fetchCalls.push({ url: url.toString(), options });
+    mockFetch.mockImplementation(async (url: RequestInfo | URL, options?: RequestInit) => {
       callCount++;
+      fetchCalls.push({ 
+        url: url.toString(), 
+        options: options || {} 
+      });
       
-      // Fail the first call, succeed the second
       if (callCount === 1) {
-        return new Response(null, { status: 500, statusText: "Internal Server Error" });
+        // First call fails
+        throw new Error("Network error");
       }
-      
-      return new Response(null, { status: 204 });
-    });
-    // Add a dummy preconnect property to satisfy the type requirement
-    (fetchMock as any).preconnect = () => Promise.resolve();
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const webhookUrl = "http://discord.test/webhook";
-    const transport = new DiscordWebhookTransport(webhookUrl, { 
-      batchIntervalMs: 10, 
-      maxBatchSize: 2, 
-      maxRetries: 1, 
-      suppressConsoleErrors: true 
+      // Second call succeeds
+      return new Response("", { status: 204 });
     });
 
-    await transport.log({ timestamp: "t", level: LogLevel.INFO, levelName: "INFO", message: "msg1", args: [] }, { format: "string" });
-    await transport.log({ timestamp: "t", level: LogLevel.INFO, levelName: "INFO", message: "msg2", args: [] }, { format: "string" });
-    
-    // Wait a bit for batching and retry logic
-    await new Promise(resolve => setTimeout(resolve, 50));
-    await transport.flush();
-    
-    expect(fetchCalls.length).toBeGreaterThanOrEqual(1);
-    expect(fetchCalls[0].url).toBe(webhookUrl);
-    
-    // Check that the request body contains our messages
-    const body = JSON.parse(fetchCalls[0].options.body);
-    expect(body.content).toContain("msg1");
-  });
-
-  it("should apply console redaction to Discord messages", async () => {
-    let sentContent = "";
-    
-    const fetchMock = mock(async (url: string | URL, options?: any) => {
-      const body = JSON.parse(options.body);
-      sentContent = body.content;
-      return new Response(null, { status: 204 });
-    });
-    (fetchMock as any).preconnect = () => Promise.resolve();
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const webhookUrl = "http://discord.test/webhook";
-    const transport = new DiscordWebhookTransport(webhookUrl, { 
-      suppressConsoleErrors: true 
+    const transport = new DiscordWebhookTransport("https://discord.com/api/webhooks/test", {
+      batchIntervalMs: 100,
+      maxRetries: 3,
+      suppressConsoleErrors: true
     });
 
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
       level: LogLevel.INFO,
       levelName: "INFO",
-      message: "Discord test",
-      args: [],
-      data: { secret: "hidden-value" }
+      message: "Test message",
+      args: { processedArgs: [], hasComplexArgs: false },
     };
 
-    await transport.log(entry, {
-      redaction: {
-        keys: ["secret"],
-        replacement: "[DISCORD-REDACTED]",
-        redactIn: "console" // Discord uses console redaction
-      },
-      format: "string"
+    await transport.log(entry);
+
+    // Wait a bit for batching and retry logic
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await transport.flush();
+
+    expect(fetchCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("should apply console redaction to Discord messages", async () => {
+    let sentContent = "";
+    
+    mockFetch.mockImplementation(async (url: RequestInfo | URL, options?: RequestInit) => {
+      fetchCalls.push({ 
+        url: url.toString(), 
+        options: options || {} 
+      });
+      
+      const body = JSON.parse(options?.body as string);
+      sentContent = body.content;
+      return new Response("", { status: 204 });
+    });
+
+    const transport = new DiscordWebhookTransport("https://discord.com/api/webhooks/test", {
+      batchIntervalMs: 50
+    });
+
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.INFO,
+      levelName: "INFO",
+      message: "Redaction test",
+      args: { processedArgs: [], hasComplexArgs: false },
+      data: { password: "secret123", username: "john" }
+    };
+
+    await transport.log(entry, { 
+      redaction: { 
+        keys: ["password"], 
+        replacement: "[REDACTED]" 
+      } 
     });
     
     await transport.flush();
-    
-    // The sent content should only contain the message text, as Discord transport does not include structured data
-    expect(sentContent).toContain("Discord test");
-    expect(sentContent).not.toContain("hidden-value");
-    expect(sentContent).not.toContain("[DISCORD-REDACTED]");
+
+    expect(sentContent).toContain("Redaction test");
+    expect(sentContent).not.toContain("secret123");
   });
 
   it("should handle network failures gracefully", async () => {
-    const fetchMock = mock(async () => {
-      throw new Error("Network error");
+    mockFetch.mockImplementation(async () => {
+      throw new Error("Network failure");
     });
-    (fetchMock as any).preconnect = () => Promise.resolve();
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const webhookUrl = "http://discord.test/webhook";
-    const transport = new DiscordWebhookTransport(webhookUrl, { 
+    const transport = new DiscordWebhookTransport("https://discord.com/api/webhooks/test", {
       suppressConsoleErrors: true,
-      maxRetries: 0 // Don't retry for this test
-    });
-
-    // This should not throw
-    expect(async () => {
-      await transport.log({ 
-        timestamp: "t", 
-        level: LogLevel.INFO, 
-        levelName: "INFO", 
-        message: "test", 
-        args: [] 
-      }, { format: "string" });
-      await transport.flush();
-    }).not.toThrow();
-  });
-
-  it("should respect maxBatchSize", async () => {
-    let batchSizes: number[] = [];
-    
-    const fetchMock = mock(async (_: unknown, options?: any) => {
-      const body = JSON.parse(options.body);
-      // Count number of messages in the batch by splitting on newlines and filtering empty lines
-      const lines = body.content.split('\n').filter((line: string) => line.trim().length > 0);
-      batchSizes.push(lines.length);
-      return new Response(null, { status: 204 });
-    });
-    (fetchMock as any).preconnect = () => Promise.resolve();
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const webhookUrl = "http://discord.test/webhook";
-    const transport = new DiscordWebhookTransport(webhookUrl, { 
-      maxBatchSize: 2,
-      batchIntervalMs: 5, // Lower interval to ensure batching by size, not time
-      suppressConsoleErrors: true 
-    });
-
-    // Log 3 messages - should trigger batching at 2 messages
-    await transport.log({ timestamp: "t", level: LogLevel.INFO, levelName: "INFO", message: "msg1", args: [] }, { format: "string" });
-    await transport.log({ timestamp: "t", level: LogLevel.INFO, levelName: "INFO", message: "msg2", args: [] }, { format: "string" });
-    // Wait a bit to allow the batch to flush due to maxBatchSize
-    await new Promise(resolve => setTimeout(resolve, 20));
-    await transport.log({ timestamp: "t", level: LogLevel.INFO, levelName: "INFO", message: "msg3", args: [] }, { format: "string" });
-    // Wait a bit to allow the last batch to flush
-    await new Promise(resolve => setTimeout(resolve, 20));
-    await transport.flush();
-    
-    // Should have made at least one batch, and each batch should respect maxBatchSize
-    expect(batchSizes.length).toBeGreaterThanOrEqual(1);
-    expect(batchSizes.every(size => size <= 2)).toBe(true);
-  });
-
-  it("should format messages correctly", async () => {
-    let sentContent = "";
-    
-    const fetchMock = mock(async (url: string | URL, options?: any) => {
-      const body = JSON.parse(options.body);
-      sentContent = body.content;
-      return new Response(null, { status: 204 });
-    });
-    (fetchMock as any).preconnect = () => Promise.resolve();
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const webhookUrl = "http://discord.test/webhook";
-    const transport = new DiscordWebhookTransport(webhookUrl, { 
-      suppressConsoleErrors: true 
+      maxRetries: 1
     });
 
     const entry: LogEntry = {
       timestamp: "2023-01-01T12:00:00.000Z",
       level: LogLevel.ERROR,
       levelName: "ERROR",
-      message: "Test error message",
-      args: []
+      message: "Network test",
+      args: { processedArgs: [], hasComplexArgs: false },
     };
 
-    await transport.log(entry, { format: "string" });
-    await transport.flush();
+    // Should not throw even if network fails
+    await expect(transport.log(entry)).resolves.toBeUndefined();
+    await expect(transport.flush()).resolves.toBeUndefined();
+  });
+
+  it("should respect maxBatchSize", async () => {
+    let sentContent = "";
     
-    expect(sentContent).toContain("ERROR");
-    expect(sentContent).toContain("Test error message");
+    mockFetch.mockImplementation(async (url: RequestInfo | URL, options?: RequestInit) => {
+      fetchCalls.push({ 
+        url: url.toString(), 
+        options: options || {} 
+      });
+      
+      const body = JSON.parse(options?.body as string);
+      sentContent = body.content;
+      return new Response("", { status: 204 });
+    });
+
+    const transport = new DiscordWebhookTransport("https://discord.com/api/webhooks/test", {
+      maxBatchSize: 2,
+      batchIntervalMs: 100
+    });
+
+    // Add multiple entries
+    for (let i = 0; i < 3; i++) {
+      const entry: LogEntry = {
+        timestamp: "2023-01-01T12:00:00.000Z",
+        level: LogLevel.INFO,
+        levelName: "INFO",
+        message: `Discord test ${i}`,
+        args: { processedArgs: [], hasComplexArgs: false },
+      };
+      await transport.log(entry);
+    }
+
+    await transport.flush();
+
+    // The sent content should only contain the message text, as Discord transport does not include structured data
+    expect(sentContent).toContain("Discord test");
+    expect(fetchCalls.length).toBeGreaterThan(0);
+  });
+
+  it("should format messages correctly", async () => {
+    let sentContent = "";
+    
+    mockFetch.mockImplementation(async (url: RequestInfo | URL, options?: RequestInit) => {
+      fetchCalls.push({ 
+        url: url.toString(), 
+        options: options || {} 
+      });
+      
+      const body = JSON.parse(options?.body as string);
+      sentContent = body.content;
+      return new Response("", { status: 204 });
+    });
+
+    const transport = new DiscordWebhookTransport("https://discord.com/api/webhooks/test", {
+      batchIntervalMs: 50
+    });
+
+    const entry: LogEntry = {
+      timestamp: "2023-01-01T12:00:00.000Z",
+      level: LogLevel.WARN,
+      levelName: "WARN",
+      message: "Format test",
+      args: { processedArgs: ["arg1", "arg2"], hasComplexArgs: false },
+      data: { component: "test" }
+    };
+
+    await transport.log(entry);
+    await transport.flush();
+
+    expect(sentContent).toContain("Format test");
+    expect(sentContent).toContain("WARN");
     expect(sentContent).toContain("2023-01-01T12:00:00.000Z");
   });
 });

@@ -55,7 +55,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Test redaction",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { password: "456", token: "abc", keep: "ok" }
     };
 
@@ -85,7 +85,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "No redact for console",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { secret: "should-not-be-redacted" }
     };
     
@@ -126,7 +126,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "File redaction test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { secret: "should-be-redacted" }
     };
 
@@ -164,7 +164,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Both redaction test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { secret: "should-be-redacted" }
     };
     
@@ -193,7 +193,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Nested redaction test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { 
         user: { 
           name: "john", 
@@ -235,7 +235,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Circular redaction test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: circular
     };
     
@@ -268,7 +268,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Case insensitive test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { 
         Password: "secret1",
         TOKEN: "secret2",
@@ -306,7 +306,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Case sensitive test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { 
         password: "secret1",
         Password: "secret2",
@@ -366,7 +366,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Backward compatibility test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { 
         password: "secret123",
         token: "abc456",
@@ -400,7 +400,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Context replacement test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { 
         password: "secret123",
         user: {
@@ -434,7 +434,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Password in message: secret123",
-      args: ["Password in args: secret456"],
+      args: { processedArgs: ["Password in args: secret456"], hasComplexArgs: false },
       data: { 
         password: "secret789"
       }
@@ -459,7 +459,7 @@ describe("Redaction", () => {
     
     // Only data should be redacted, message and args should remain unchanged
     expect(loggedData.message).toBe("Password in message: secret123");
-    expect(loggedData.args[0]).toBe("Password in args: secret456");
+    expect(loggedData.args.processedArgs[0]).toBe("Password in args: secret456");
     expect(loggedData.data.password).toBe("[TARGETED_REDACTED]");
   });
 
@@ -471,7 +471,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Field config test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { 
         password: "secret123",
         token: "abc456",
@@ -522,7 +522,7 @@ describe("Redaction", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Max depth test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: deepData
     };
     

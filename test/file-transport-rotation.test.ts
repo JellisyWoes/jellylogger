@@ -159,7 +159,7 @@ describe("FileTransport Rotation (Mocked)", () => {
         levelName: "INFO",
         message: "Size rotation test",
         data: {},
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "json" });
@@ -193,7 +193,7 @@ describe("FileTransport Rotation (Mocked)", () => {
         levelName: "INFO",
         message: "Multiple rotation test",
         data: {},
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
       await transport.log(entry, { format: "json" });
       
@@ -272,7 +272,7 @@ describe("FileTransport Rotation (Mocked)", () => {
         levelName: "INFO",
         message: "Delete old files test",
         data: {},
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "json" });
@@ -307,7 +307,7 @@ describe("FileTransport Rotation (Mocked)", () => {
         levelName: "INFO",
         message: "Date rotation test",
         data: {},
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "json" });
@@ -332,7 +332,7 @@ describe("FileTransport Rotation (Mocked)", () => {
         levelName: "INFO", 
         message: "Combined test",
         data: {},
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "json" });
@@ -406,7 +406,7 @@ describe("FileTransport Rotation (Mocked)", () => {
         levelName: "INFO",
         message: "Compression test",
         data: {},
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "json" });
@@ -444,7 +444,7 @@ describe("FileTransport Rotation (Mocked)", () => {
         levelName: "INFO",
         message: "Error handling test",
         data: {},
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "json" });
@@ -474,7 +474,7 @@ describe("FileTransport Rotation (Mocked)", () => {
         levelName: "INFO",
         message: "Size check error test",
         data: {},
-        args: []
+        args: { processedArgs: [], hasComplexArgs: false }
       };
 
       await transport.log(entry, { format: "json" });

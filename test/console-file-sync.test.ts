@@ -277,19 +277,18 @@ describe("Console and File Transport Synchronization", () => {
     expect(consoleErrorEntry.message).toBe(memoryErrorEntry.message);
     expect(consoleErrorEntry.message).toBe("Error handling test");
     
-    // Both should have processed the error in args
-    expect(consoleErrorEntry.args).toBeDefined();
-    expect(consoleErrorEntry.args).toHaveLength(1);
-    expect(memoryErrorEntry.args).toBeDefined();
-    expect(memoryErrorEntry.args).toHaveLength(1);
+    // The current logger implementation places error objects in the data field,
+    // not in args.processedArgs, because errors are treated as structured data
+    expect(consoleErrorEntry.data).toBeDefined();
+    expect(memoryErrorEntry.data).toBeDefined();
     
     // Error should be serialized as an object with name, message, stack
-    const consoleErrorArg = consoleErrorEntry.args[0];
-    const memoryErrorArg = memoryErrorEntry.args[0];
-    expect(consoleErrorArg.name).toBe("Error");
-    expect(consoleErrorArg.message).toBe("Test error with stack");
-    expect(memoryErrorArg.name).toBe("Error");
-    expect(memoryErrorArg.message).toBe("Test error with stack");
+    const consoleErrorData = consoleErrorEntry.data;
+    const memoryErrorData = memoryErrorEntry.data;
+    expect(consoleErrorData.name).toBe("Error");
+    expect(consoleErrorData.message).toBe("Test error with stack");
+    expect(memoryErrorData.name).toBe("Error");
+    expect(memoryErrorData.message).toBe("Test error with stack");
 
     // Parse second entry (circular reference)
     const consoleCircularEntry = JSON.parse(consoleOutput[1]);
@@ -299,7 +298,7 @@ describe("Console and File Transport Synchronization", () => {
     expect(consoleCircularEntry.message).toBe("Circular reference test");
     
     // For circular reference, both should handle it identically
-    expect(consoleCircularEntry.args).toEqual(memoryCircularEntry.args);
+    expect(consoleCircularEntry.data).toEqual(memoryCircularEntry.data);
   });
 
   it("should respect log level filtering consistently", async () => {

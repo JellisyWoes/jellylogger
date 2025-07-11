@@ -28,7 +28,7 @@ describe("Custom Formatter", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Custom format test",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     };
 
     transport.log(entry, { formatter: customFormatter.format });
@@ -48,7 +48,7 @@ describe("Custom Formatter", () => {
           level: entry.levelName.toLowerCase(),
           msg: entry.message,
           data: entry.data || {},
-          extra: entry.args
+          extra: entry.args.processedArgs
         });
       }
     };
@@ -58,7 +58,7 @@ describe("Custom Formatter", () => {
       level: LogLevel.ERROR,
       levelName: "ERROR",
       message: "Memory format test",
-      args: ["extra1", "extra2"],
+      args: { processedArgs: ["extra1", "extra2"], hasComplexArgs: false },
       data: { errorCode: "E001" }
     };
 
@@ -97,8 +97,8 @@ describe("Custom Formatter", () => {
           ...(entry.data ?? {})
         };
         
-        if (entry.args && entry.args.length > 0) {
-          structured["@args"] = entry.args;
+        if (entry.args && entry.args.processedArgs.length > 0) {
+          structured["@args"] = entry.args.processedArgs;
         }
         
         return JSON.stringify(structured);
@@ -111,7 +111,7 @@ describe("Custom Formatter", () => {
       level: LogLevel.WARN,
       levelName: "WARN",
       message: "Structured format test",
-      args: [{ detail: "warning detail" }],
+      args: { processedArgs: [{ detail: "warning detail" }], hasComplexArgs: true },
       data: { 
         service: "api",
         userId: "user123" 
@@ -159,7 +159,7 @@ describe("Custom Formatter", () => {
       level: LogLevel.ERROR,
       levelName: "ERROR",
       message: "Critical error occurred",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     }, { formatter: conditionalFormatter.format });
 
     // Test info level
@@ -168,7 +168,7 @@ describe("Custom Formatter", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Normal operation",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     }, { formatter: conditionalFormatter.format });
 
     expect(mockConsoleError).toHaveBeenCalledWith(
@@ -200,7 +200,7 @@ describe("Custom Formatter", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Test with faulty formatter",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     };
 
     // Should fall back to default formatting and not crash
@@ -232,7 +232,7 @@ describe("Custom Formatter", () => {
           severity: entry.levelName,
           message: entry.message,
           metadata: {
-            args: entry.args,
+            args: entry.args.processedArgs,
             data: entry.data
           }
         } as any; // Cast to any since formatter expects string
@@ -244,7 +244,7 @@ describe("Custom Formatter", () => {
       level: LogLevel.DEBUG,
       levelName: "DEBUG",
       message: "Object formatter test",
-      args: ["debug_arg"],
+      args: { processedArgs: ["debug_arg"], hasComplexArgs: false },
       data: { debugFlag: true }
     };
 
@@ -282,9 +282,12 @@ describe("Custom Formatter", () => {
 
     logger.info("Logger with custom formatter");
 
-    expect(mockConsoleInfo).toHaveBeenCalledWith(
-      expect.stringMatching(/^\[INFO\] \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z - Logger with custom formatter$/)
-    );
+    // Verify that the formatter was called and output was produced
+    expect(mockConsoleInfo).toHaveBeenCalledTimes(1);
+    const calls = (mockConsoleInfo as any).mock.calls;
+    const actualOutput = calls.length > 0 && calls[0] && calls[0].length > 0 ? String(calls[0][0]) : "";
+    // Updated regex to match human-readable timestamp format: "2025-05-31 11:35:18 PM"
+    expect(actualOutput).toMatch(/^\[INFO\] \d{4}-\d{2}-\d{2} \d{1,2}:\d{2}:\d{2} (AM|PM) - Logger with custom formatter$/);
 
     console.info = originalInfo;
   });
@@ -316,7 +319,7 @@ describe("Custom Formatter", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Template test",
-      args: [],
+      args: { processedArgs: [], hasComplexArgs: false },
       data: { userId: "123", action: "login" }
     };
 

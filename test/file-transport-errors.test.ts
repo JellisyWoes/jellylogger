@@ -56,7 +56,7 @@ describe("FileTransport Error Handling", () => {
       level: LogLevel.ERROR,
       levelName: "ERROR",
       message: "Write failure test",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     };
 
     // Should not throw but log error to console
@@ -92,7 +92,7 @@ describe("FileTransport Error Handling", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Permission test",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     };
 
     // Should not throw but log error to console
@@ -124,7 +124,7 @@ describe("FileTransport Error Handling", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "File check error test",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     };
 
     // Should still attempt to write despite file check error
@@ -155,7 +155,7 @@ describe("FileTransport Error Handling", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Writer error test",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     };
 
     // Should not throw but log error to console
@@ -193,7 +193,7 @@ describe("FileTransport Error Handling", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "First attempt",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     }, { format: "json" });
     await transport.flush();
 
@@ -204,7 +204,7 @@ describe("FileTransport Error Handling", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Second attempt",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     }, { format: "json" });
     await transport.flush();
 
@@ -215,7 +215,7 @@ describe("FileTransport Error Handling", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Third attempt",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     }, { format: "json" });
     await transport.flush();
 
@@ -256,7 +256,7 @@ describe("FileTransport Error Handling", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: `Buffer test ${i}`,
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     }));
 
     // Log entries one by one with delays
@@ -295,7 +295,7 @@ describe("FileTransport Error Handling", () => {
       level: LogLevel.INFO,
       levelName: "INFO",
       message: "Corrupted file test",
-      args: []
+      args: { processedArgs: [], hasComplexArgs: false }
     };
 
     // Should handle gracefully and continue logging
