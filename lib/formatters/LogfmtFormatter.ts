@@ -1,31 +1,34 @@
-import type { LogEntry, CustomConsoleColors } from '../core/types';
+import type { CustomConsoleColors, LogEntry } from '../core/types';
 import type { LogFormatter } from './LogFormatter';
 import { safeStringify } from '../utils/serialization';
-import { 
-  getConsistentFormatterColors, 
-  colorizeLevelText, 
-  dimText, 
+import {
   boldText,
-  escapeQuotes 
+  colorizeLevelText,
+  dimText,
+  escapeQuotes,
+  getConsistentFormatterColors,
 } from '../utils/formatterColors';
 
 /**
  * Built-in logfmt formatter with color support.
  */
 export class LogfmtFormatter implements LogFormatter {
-  format(entry: LogEntry, options?: { consoleColors?: CustomConsoleColors; useColors?: boolean }): string {
+  format(
+    entry: LogEntry,
+    options?: { consoleColors?: CustomConsoleColors; useColors?: boolean },
+  ): string {
     const pairs: string[] = [];
     const colors = getConsistentFormatterColors(options);
-    
+
     // Format timestamp
     const timestamp = dimText(`ts=${entry.timestamp}`, colors);
     pairs.push(timestamp);
-    
+
     // Format level with color
     const levelName = entry.levelName.toLowerCase();
     const level = colorizeLevelText(`level=${levelName}`, entry.level, colors);
     pairs.push(level);
-    
+
     // Format message
     const escapedMessage = escapeQuotes(entry.message);
     const message = boldText(`msg="${escapedMessage}"`, colors);
