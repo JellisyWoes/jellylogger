@@ -27,7 +27,7 @@ export function useConsoleAndFile(filePath: string, rotationConfig?: LogRotation
 export function useConsoleFileAndDiscord(
   filePath: string,
   discordWebhookUrl: string,
-  rotationConfig?: LogRotationConfig
+  rotationConfig?: LogRotationConfig,
 ): void {
   logger.clearTransports();
   logger.addTransport(new ConsoleTransport());
@@ -56,7 +56,7 @@ export function useAllTransports(
   filePath: string,
   discordWebhookUrl: string,
   websocketUrl: string,
-  rotationConfig?: LogRotationConfig
+  rotationConfig?: LogRotationConfig,
 ): void {
   logger.clearTransports();
   logger.addTransport(new ConsoleTransport());

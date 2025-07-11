@@ -1,5 +1,5 @@
 import type { CustomConsoleColors } from '../core/types';
-import { LogLevel } from '../core/constants';
+import type { LogLevel } from '../core/constants';
 import { getFormatterColors } from './colors';
 
 /**
@@ -20,13 +20,15 @@ export interface FormatterColors {
 /**
  * Get formatter colors with consistent fallback behavior.
  */
-export function getConsistentFormatterColors(options?: FormatterColorOptions): FormatterColors | null {
+export function getConsistentFormatterColors(
+  options?: FormatterColorOptions,
+): FormatterColors | null {
   const useColors = options?.useColors ?? false;
-  
+
   if (!useColors || !options?.consoleColors) {
     return null;
   }
-  
+
   return getFormatterColors(options.consoleColors);
 }
 
@@ -41,7 +43,11 @@ export function colorize(text: string, color: string, colors: FormatterColors | 
 /**
  * Apply level-specific color to text.
  */
-export function colorizeLevelText(text: string, level: LogLevel, colors: FormatterColors | null): string {
+export function colorizeLevelText(
+  text: string,
+  level: LogLevel,
+  colors: FormatterColors | null,
+): string {
   if (!colors) return text;
   const levelColor = colors.levels[level] || '';
   return colorize(text, `${colors.bold}${levelColor}`, colors);

@@ -31,7 +31,10 @@ export function serializeError(error: Error, maxDepth: number = 3): Record<strin
 /**
  * Process log arguments into a structured format for logging.
  */
-export function processLogArgs(args: unknown[]): { processedArgs: unknown[]; hasComplexArgs: boolean } {
+export function processLogArgs(args: unknown[]): {
+  processedArgs: unknown[];
+  hasComplexArgs: boolean;
+} {
   const processedArgs: unknown[] = [];
   let hasComplexArgs = false;
 
@@ -53,7 +56,13 @@ export function processLogArgs(args: unknown[]): { processedArgs: unknown[]; has
     } else {
       processedArgs.push(arg);
       // Only mark as complex if it's actually complex (not primitive strings, numbers, booleans)
-      if (typeof arg !== 'string' && typeof arg !== 'number' && typeof arg !== 'boolean' && arg !== null && arg !== undefined) {
+      if (
+        typeof arg !== 'string' &&
+        typeof arg !== 'number' &&
+        typeof arg !== 'boolean' &&
+        arg !== null &&
+        arg !== undefined
+      ) {
         hasComplexArgs = true;
       }
     }
@@ -74,7 +83,7 @@ export function safeStringify(value: unknown, fallback = '[Non-serializable]'): 
   if (value === undefined) return 'undefined';
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  
+
   if (typeof value === 'object') {
     try {
       return JSON.stringify(value, createCircularReplacer());
@@ -83,7 +92,7 @@ export function safeStringify(value: unknown, fallback = '[Non-serializable]'): 
       return `[Object: ${Object.prototype.toString.call(value)}]`;
     }
   }
-  
+
   try {
     return String(value);
   } catch {
@@ -108,16 +117,16 @@ export function safeJsonStringify(value: unknown): string {
  */
 function createCircularReplacer(): (_key: string, value: unknown) => unknown {
   const seen = new WeakSet();
-  
-  return function(_key: string, value: unknown) {
+
+  return function (_key: string, value: unknown) {
     if (value === null || typeof value !== 'object') {
       return value;
     }
-    
+
     if (seen.has(value)) {
       return '[Circular Reference]';
     }
-    
+
     seen.add(value);
     return value;
   };
@@ -129,7 +138,7 @@ function createCircularReplacer(): (_key: string, value: unknown) => unknown {
 export function createSafeObject(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj !== 'object') return obj;
-  
+
   if (Array.isArray(obj)) {
     return obj.map(item => {
       try {
@@ -140,7 +149,7 @@ export function createSafeObject(obj: unknown): unknown {
       }
     });
   }
-  
+
   const safe: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     try {
@@ -150,14 +159,16 @@ export function createSafeObject(obj: unknown): unknown {
       safe[key] = '[Non-serializable Value]';
     }
   }
-  
+
   return safe;
 }
 
 /**
  * Safely process log arguments for display.
  */
-export function safeProcessArgs(args: unknown[] | { processedArgs: unknown[]; hasComplexArgs: boolean }): string[] {
+export function safeProcessArgs(
+  args: unknown[] | { processedArgs: unknown[]; hasComplexArgs: boolean },
+): string[] {
   // Handle both old array format and new processLogArgs result format
   const argsArray = Array.isArray(args) ? args : args.processedArgs;
   return argsArray.map(arg => safeStringify(arg));
@@ -170,7 +181,7 @@ export function safeProcessData(data: unknown): string {
   if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
     return '';
   }
-  
+
   try {
     return JSON.stringify(data, createCircularReplacer());
   } catch {
