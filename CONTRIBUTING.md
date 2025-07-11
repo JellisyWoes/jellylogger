@@ -17,6 +17,7 @@ Thank you for your interest in contributing to JellyLogger! This guide will help
 ## Development Setup
 
 ### Prerequisites
+
 - **Bun v1.2.13+** (required)
 - **Git**
 - **TypeScript knowledge** (recommended)
@@ -24,22 +25,26 @@ Thank you for your interest in contributing to JellyLogger! This guide will help
 ### Getting Started
 
 1. **Fork and clone the repository:**
+
    ```bash
    git clone https://github.com/yourusername/jellylogger.git
    cd jellylogger
    ```
 
 2. **Install dependencies:**
+
    ```bash
    bun install
    ```
 
 3. **Run tests to verify setup:**
+
    ```bash
    bun test
    ```
 
 4. **Build the project:**
+
    ```bash
    bun run build
    ```
@@ -93,6 +98,7 @@ jellylogger/
 ### 1. Create an Issue (Optional)
 
 For significant changes, create an issue first to discuss:
+
 - New features
 - Breaking changes
 - Major bug fixes
@@ -107,6 +113,7 @@ git checkout -b fix/issue-description
 ```
 
 **Branch naming conventions:**
+
 - `feature/feature-name` - New features
 - `fix/bug-description` - Bug fixes
 - `docs/documentation-update` - Documentation changes
@@ -116,6 +123,7 @@ git checkout -b fix/issue-description
 ### 3. Make Changes
 
 Follow our [coding standards](#coding-standards) and ensure:
+
 - Code is well-tested
 - TypeScript types are properly defined
 - Documentation is updated
@@ -181,7 +189,7 @@ async function writeLog(path: string, data: string): Promise<void> {
 }
 
 // ❌ Avoid - Node.js fs when Bun alternative exists
-import { writeFile } from "node:fs/promises";
+import { writeFile } from 'node:fs/promises';
 async function writeLog(path: string, data: string): Promise<void> {
   await writeFile(path, data);
 }
@@ -194,14 +202,14 @@ async function writeLog(path: string, data: string): Promise<void> {
 - **Naming**: Use descriptive names for variables, functions, and classes
 - **Comments**: Add JSDoc comments for public APIs
 
-```typescript
+````typescript
 /**
  * Creates a new file transport for logging to files with rotation support.
- * 
+ *
  * @param filePath - Path to the log file
  * @param options - Configuration options for the transport
  * @returns A configured FileTransport instance
- * 
+ *
  * @example
  * ```typescript
  * const transport = new FileTransport('./logs/app.log', {
@@ -214,7 +222,7 @@ async function writeLog(path: string, data: string): Promise<void> {
 export class FileTransport implements Transport {
   // Implementation
 }
-```
+````
 
 ## Testing
 
@@ -227,9 +235,9 @@ export class FileTransport implements Transport {
 ### Test Guidelines
 
 ```typescript
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
-describe("FileTransport", () => {
+describe('FileTransport', () => {
   let transport: FileTransport;
   let tempFile: string;
 
@@ -243,17 +251,17 @@ describe("FileTransport", () => {
     // Cleanup temp files
   });
 
-  it("should write log entries to file", async () => {
+  it('should write log entries to file', async () => {
     const entry: LogEntry = {
       level: LogLevel.INFO,
-      message: "test message",
-      timestamp: Date.now()
+      message: 'test message',
+      timestamp: Date.now(),
     };
 
     await transport.log(entry);
-    
+
     const content = await Bun.file(tempFile).text();
-    expect(content).toContain("test message");
+    expect(content).toContain('test message');
   });
 });
 ```
@@ -263,9 +271,9 @@ describe("FileTransport", () => {
 Include performance benchmarks for critical paths:
 
 ```typescript
-import { bench, run } from "mitata";
+import { bench, run } from 'mitata';
 
-bench("FileTransport.log", async () => {
+bench('FileTransport.log', async () => {
   await transport.log(testEntry);
 });
 
@@ -292,7 +300,7 @@ Add practical examples in the `examples/` directory:
 
 ```typescript
 // examples/custom-transport.ts
-import { Transport, LogEntry } from "jellylogger";
+import { Transport, LogEntry } from 'jellylogger';
 
 export class CustomTransport implements Transport {
   async log(entry: LogEntry): Promise<void> {
@@ -316,9 +324,11 @@ export class CustomTransport implements Transport {
 
 ```markdown
 ## Description
+
 Brief description of the changes.
 
 ## Type of Change
+
 - [ ] Bug fix
 - [ ] New feature
 - [ ] Breaking change
@@ -326,17 +336,21 @@ Brief description of the changes.
 - [ ] Performance improvement
 
 ## Testing
+
 - [ ] Unit tests added/updated
 - [ ] Integration tests added/updated
 - [ ] Manual testing performed
 
 ## Performance Impact
+
 Describe any performance implications.
 
 ## Breaking Changes
+
 List any breaking changes and migration steps.
 
 ## Documentation
+
 - [ ] README updated
 - [ ] API docs updated
 - [ ] Examples added
@@ -354,6 +368,7 @@ List any breaking changes and migration steps.
 ### Versioning
 
 We follow [Semantic Versioning](https://semver.org/):
+
 - **Major** (x.0.0): Breaking changes
 - **Minor** (0.x.0): New features, backward compatible
 - **Patch** (0.0.x): Bug fixes, backward compatible
@@ -394,6 +409,7 @@ If you need help:
 ## Recognition
 
 Contributors will be:
+
 - Listed in the repository contributors
 - Mentioned in release notes for significant contributions
 - Invited to join the maintainer team for sustained contributions
