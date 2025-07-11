@@ -1,12 +1,12 @@
-import { LogLevel } from './constants';
 import { ConsoleTransport } from '../transports/ConsoleTransport';
 import { getTimestamp, processLogArgs } from '../utils/serialization';
-import type { 
-  BaseLogger, 
-  ChildLoggerOptions, 
-  LoggerOptions, 
-  LogEntry, 
-  TransportOptions 
+import { LogLevel } from './constants';
+import type {
+  BaseLogger,
+  ChildLoggerOptions,
+  LogEntry,
+  LoggerOptions,
+  TransportOptions,
 } from './types';
 
 /**
@@ -57,13 +57,15 @@ export class ChildLogger implements BaseLogger {
   }
 
   child(options: ChildLoggerOptions = {}): BaseLogger {
-    const combinedPrefix = this.options.messagePrefix 
-      ? (options.messagePrefix ? `${this.options.messagePrefix} ${options.messagePrefix}` : this.options.messagePrefix)
+    const combinedPrefix = this.options.messagePrefix
+      ? options.messagePrefix
+        ? `${this.options.messagePrefix} ${options.messagePrefix}`
+        : this.options.messagePrefix
       : options.messagePrefix;
-    
+
     return new ChildLogger(this.parent, {
       ...options,
-      messagePrefix: combinedPrefix
+      messagePrefix: combinedPrefix,
     });
   }
 
@@ -81,19 +83,24 @@ export const defaultOptions: LoggerOptions = {
   customConsoleColors: {},
 };
 
-interface JellyLoggerImpl extends BaseLogger {
+interface IJellyLogger extends BaseLogger {
   options: LoggerOptions;
   setOptions(options: Partial<LoggerOptions>): void;
   resetOptions(): void;
   _log(level: LogLevel, message: string, ...args: unknown[]): void;
-  _logWithData(level: LogLevel, message: string, data?: Record<string, unknown>, ...args: unknown[]): void;
+  _logWithData(
+    level: LogLevel,
+    message: string,
+    data?: Record<string, unknown>,
+    ...args: unknown[]
+  ): void;
   addTransport(transport: any): void;
   removeTransport(transport: any): void;
   clearTransports(): void;
   setTransports(transports: any[]): void;
 }
 
-class JellyLoggerImpl implements JellyLoggerImpl {
+class JellyLoggerImpl implements IJellyLogger {
   options: LoggerOptions = { ...defaultOptions };
 
   setOptions(options: Partial<LoggerOptions>): void {
@@ -111,11 +118,11 @@ class JellyLoggerImpl implements JellyLoggerImpl {
 
   private createLogEntry(level: LogLevel, message: string, optionalParams: unknown[]): LogEntry {
     const { processedArgs, hasComplexArgs } = processLogArgs(optionalParams);
-    
+
     // Separate data objects from other args
     const dataObjects: Record<string, unknown>[] = [];
     const otherArgs: unknown[] = [];
-    
+
     for (const arg of processedArgs) {
       if (arg && typeof arg === 'object' && !Array.isArray(arg) && !(arg instanceof Error)) {
         dataObjects.push(arg as Record<string, unknown>);
@@ -123,7 +130,7 @@ class JellyLoggerImpl implements JellyLoggerImpl {
         otherArgs.push(arg);
       }
     }
-    
+
     // Merge all data objects into one
     const data = dataObjects.length > 0 ? Object.assign({}, ...dataObjects) : undefined;
 
@@ -135,8 +142,8 @@ class JellyLoggerImpl implements JellyLoggerImpl {
       data,
       args: {
         processedArgs: otherArgs,
-        hasComplexArgs
-      }
+        hasComplexArgs,
+      },
     };
   }
 
@@ -147,7 +154,7 @@ class JellyLoggerImpl implements JellyLoggerImpl {
 
     const entry = this.createLogEntry(level, message, optionalParams);
     const transportOptions: TransportOptions = {
-      ...this.options
+      ...this.options,
     };
 
     // Send to all transports with null safety
@@ -196,27 +203,24 @@ class JellyLoggerImpl implements JellyLoggerImpl {
 
   async flushAll(): Promise<void> {
     const transports = this.options.transports ?? [];
-    const flushPromises = transports
-      .map(transport => {
-        if (transport.flush) {
-          try {
-            return transport.flush(this.options);
-          } catch (error) {
-            console.error(`Error flushing transport '${transport.constructor.name}':`, error);
-            return Promise.resolve();
-          }
+    const flushPromises = transports.map(transport => {
+      if (transport.flush) {
+        try {
+          return transport.flush(this.options);
+        } catch (error) {
+          console.error(`Error flushing transport '${transport.constructor.name}':`, error);
+          return Promise.resolve();
         }
-        return Promise.resolve();
-      });
+      }
+      return Promise.resolve();
+    });
 
     await Promise.allSettled(flushPromises);
   }
 
   // Transport management methods
   addTransport(transport: any): void {
-    if (!this.options.transports) {
-      this.options.transports = [];
-    }
+    this.options.transports ??= [];
     this.options.transports.push(transport);
   }
 
@@ -243,7 +247,12 @@ class JellyLoggerImpl implements JellyLoggerImpl {
     this.log(level, message, ...args);
   }
 
-  _logWithData(level: LogLevel, message: string, data?: Record<string, unknown>, ...args: unknown[]): void {
+  _logWithData(
+    level: LogLevel,
+    message: string,
+    data?: Record<string, unknown>,
+    ...args: unknown[]
+  ): void {
     if (data) {
       this.log(level, message, data, ...args);
     } else {
