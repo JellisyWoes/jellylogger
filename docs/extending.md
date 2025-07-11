@@ -1,351 +1,459 @@
 # Extending JellyLogger
 
-JellyLogger is designed to be highly extensible. This guide covers how to create custom transports, formatters, redaction logic, and integrate with external systems.
+Learn how to extend JellyLogger with custom transports, formatters, and redaction logic.
 
 ---
 
-## Overview
+## Table of Contents
 
-JellyLogger's extensibility comes from well-defined interfaces:
-
-- **Custom Transports**: Send logs to any destination
-- **Custom Formatters**: Control log structure and appearance
-- **Custom Redaction**: Implement domain-specific data protection
-- **Plugins**: Combine multiple extensions for complex scenarios
-- **Integration Hooks**: Connect with monitoring and alerting systems
+1. [Custom Transports](#custom-transports)
+2. [Custom Formatters](#custom-formatters)
+3. [Custom Redaction Logic](#custom-redaction-logic)
+4. [Plugin Architecture](#plugin-architecture)
+5. [Integration Examples](#integration-examples)
+6. [Testing Custom Extensions](#testing-custom-extensions)
+7. [Best Practices](#best-practices)
 
 ---
 
-## Creating Custom Transports
+## Custom Transports
 
 ### Basic Transport Implementation
 
 ```typescript
 import type { Transport, LogEntry, TransportOptions } from "jellylogger";
+import { getRedactedEntry } from "jellylogger";
 
 class DatabaseTransport implements Transport {
-  private connectionString: string;
-  private db: Database;
-
-  constructor(connectionString: string) {
-    this.connectionString = connectionString;
-    this.db = new Database(connectionString);
-  }
+  constructor(private connectionString: string) {}
 
   async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
     try {
-      await this.db.query(`
-        INSERT INTO logs (timestamp, level, level_name, message, data, args)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [
-        new Date(entry.timestamp),
-        entry.level,
-        entry.levelName,
-        entry.message,
-        JSON.stringify(entry.data || {}),
-        JSON.stringify(entry.args)
-      ]);
+      // Apply redaction for database storage
+      const redacted = getRedactedEntry(entry, options?.redaction, 'file');
+      
+      // Connect and store in database
+      const connection = await this.getConnection();
+      await connection.query(
+        'INSERT INTO logs (timestamp, level, message, data) VALUES (?, ?, ?, ?)',
+        [redacted.timestamp, redacted.level, redacted.message, JSON.stringify(redacted.data)]
+      );
     } catch (error) {
       console.error('DatabaseTransport error:', error);
+      // Never throw from log() - let other transports continue
     }
   }
 
-  async flush(options?: TransportOptions): Promise<void> {
-    // Ensure all database operations are complete
-    await this.db.flush();
+  async flush(): Promise<void> {
+    // Ensure all pending database writes are committed
+    const connection = await this.getConnection();
+    await connection.commit();
+  }
+
+  private async getConnection() {
+    // Database connection logic
+    throw new Error("Implement database connection");
   }
 }
 
 // Usage
-import { logger } from "jellylogger";
-logger.addTransport(new DatabaseTransport("postgresql://localhost/logs"));
+const dbTransport = new DatabaseTransport("postgresql://...");
+logger.addTransport(dbTransport);
 ```
 
 ### Advanced Transport with Buffering
 
 ```typescript
-import type { Transport, LogEntry, TransportOptions } from "jellylogger";
-
-interface ElasticsearchTransportOptions {
-  bufferSize?: number;
-  flushInterval?: number;
-  indexPrefix?: string;
-  retryAttempts?: number;
-}
-
-class ElasticsearchTransport implements Transport {
+class BufferedTransport implements Transport {
   private buffer: LogEntry[] = [];
-  private options: Required<ElasticsearchTransportOptions>;
-  private timer: NodeJS.Timeout | null = null;
-  private client: ElasticsearchClient;
+  private flushTimer: Timer | null = null;
+  private readonly bufferSize: number;
+  private readonly flushInterval: number;
 
   constructor(
-    elasticsearchUrl: string, 
-    options: ElasticsearchTransportOptions = {}
+    private destination: Transport,
+    options: { bufferSize?: number; flushInterval?: number } = {}
   ) {
-    this.options = {
-      bufferSize: options.bufferSize ?? 100,
-      flushInterval: options.flushInterval ?? 5000,
-      indexPrefix: options.indexPrefix ?? 'jellylogger',
-      retryAttempts: options.retryAttempts ?? 3
-    };
-    
-    this.client = new ElasticsearchClient({ node: elasticsearchUrl });
-    this.scheduleFlush();
+    this.bufferSize = options.bufferSize ?? 100;
+    this.flushInterval = options.flushInterval ?? 5000; // 5 seconds
   }
 
   async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
     this.buffer.push(entry);
-    
-    if (this.buffer.length >= this.options.bufferSize) {
-      await this.flushBuffer();
+
+    // Flush if buffer is full
+    if (this.buffer.length >= this.bufferSize) {
+      await this.flushBuffer(options);
+    }
+
+    // Schedule flush if not already scheduled
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => {
+        this.flushBuffer(options).catch(console.error);
+      }, this.flushInterval);
     }
   }
 
   async flush(options?: TransportOptions): Promise<void> {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
+    await this.flushBuffer(options);
+  }
+
+  private async flushBuffer(options?: TransportOptions): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
     }
-    await this.flushBuffer();
-  }
 
-  private scheduleFlush(): void {
-    this.timer = setTimeout(async () => {
-      await this.flushBuffer();
-      this.scheduleFlush();
-    }, this.options.flushInterval);
-  }
-
-  private async flushBuffer(): Promise<void> {
-    if (this.buffer.length === 0) return;
-
-    const entries = this.buffer.splice(0, this.buffer.length);
-    const indexName = `${this.options.indexPrefix}-${new Date().toISOString().slice(0, 10)}`;
-
-    const body = entries.flatMap(entry => [
-      { index: { _index: indexName } },
-      {
-        '@timestamp': entry.timestamp,
-        level: entry.levelName.toLowerCase(),
-        message: entry.message,
-        ...entry.data,
-        args: entry.args
-      }
-    ]);
-
-    for (let attempt = 1; attempt <= this.options.retryAttempts; attempt++) {
+    const entries = this.buffer.splice(0); // Remove all entries
+    
+    for (const entry of entries) {
       try {
-        await this.client.bulk({ body });
-        break;
+        await this.destination.log(entry, options);
       } catch (error) {
-        console.error(`Elasticsearch bulk insert failed (attempt ${attempt}):`, error);
-        if (attempt === this.options.retryAttempts) {
-          console.error('All retry attempts failed, dropping logs');
-        } else {
-          // Exponential backoff
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-        }
+        console.error('BufferedTransport flush error:', error);
       }
     }
-  }
-}
-
-// Usage with configuration
-logger.addTransport(new ElasticsearchTransport("http://localhost:9200", {
-  bufferSize: 50,
-  flushInterval: 10000,
-  indexPrefix: 'myapp-logs',
-  retryAttempts: 5
-}));
-```
-
-### Transport with Conditional Logic
-
-```typescript
-class ConditionalTransport implements Transport {
-  private primaryTransport: Transport;
-  private fallbackTransport: Transport;
-  private condition: (entry: LogEntry) => boolean;
-
-  constructor(
-    primaryTransport: Transport,
-    fallbackTransport: Transport,
-    condition: (entry: LogEntry) => boolean
-  ) {
-    this.primaryTransport = primaryTransport;
-    this.fallbackTransport = fallbackTransport;
-    this.condition = condition;
-  }
-
-  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
-    const transport = this.condition(entry) 
-      ? this.primaryTransport 
-      : this.fallbackTransport;
-    
-    await transport.log(entry, options);
-  }
-
-  async flush(options?: TransportOptions): Promise<void> {
-    await Promise.all([
-      this.primaryTransport.flush?.(options),
-      this.fallbackTransport.flush?.(options)
-    ]);
-  }
-}
-
-// Usage: Send errors to Discord, everything else to file
-const conditionalTransport = new ConditionalTransport(
-  new DiscordWebhookTransport("webhook-url"),
-  new FileTransport("./logs/app.log"),
-  (entry) => entry.level <= LogLevel.ERROR
-);
-
-logger.addTransport(conditionalTransport);
-```
-
----
-
-## Creating Custom Formatters
-
-### Pluggable Formatter Implementation
-
-```typescript
-import type { LogFormatter, LogEntry } from "jellylogger";
-
-class CustomFormatter implements LogFormatter {
-  private includeTimestamp: boolean;
-  private includeLevel: boolean;
-  private timestampFormat: 'iso' | 'unix' | 'human';
-
-  constructor(options: {
-    includeTimestamp?: boolean;
-    includeLevel?: boolean;
-    timestampFormat?: 'iso' | 'unix' | 'human';
-  } = {}) {
-    this.includeTimestamp = options.includeTimestamp ?? true;
-    this.includeLevel = options.includeLevel ?? true;
-    this.timestampFormat = options.timestampFormat ?? 'iso';
-  }
-
-  format(entry: LogEntry): string {
-    const parts: string[] = [];
-
-    if (this.includeTimestamp) {
-      const timestamp = this.formatTimestamp(entry.timestamp);
-      parts.push(`[${timestamp}]`);
-    }
-
-    if (this.includeLevel) {
-      parts.push(`[${entry.levelName.toUpperCase()}]`);
-    }
-
-    parts.push(entry.message);
-
-    // Add structured data
-    if (entry.data && Object.keys(entry.data).length > 0) {
-      parts.push(this.formatData(entry.data));
-    }
-
-    // Add arguments
-    if (entry.args.length > 0) {
-      parts.push(this.formatArgs(entry.args));
-    }
-
-    return parts.join(' ');
-  }
-
-  private formatTimestamp(timestamp: string): string {
-    const date = new Date(timestamp);
-    switch (this.timestampFormat) {
-      case 'unix':
-        return (date.getTime() / 1000).toString();
-      case 'human':
-        return date.toLocaleString();
-      case 'iso':
-      default:
-        return timestamp;
-    }
-  }
-
-  private formatData(data: Record<string, unknown>): string {
-    const pairs = Object.entries(data)
-      .map(([key, value]) => `${key}=${this.formatValue(value)}`)
-      .join(' ');
-    return `{${pairs}}`;
-  }
-
-  private formatArgs(args: unknown[]): string {
-    return args.map(arg => this.formatValue(arg)).join(' ');
-  }
-
-  private formatValue(value: unknown): string {
-    if (typeof value === 'string') {
-      return value.includes(' ') ? `"${value}"` : value;
-    }
-    if (typeof value === 'object') {
-      try {
-        return JSON.stringify(value);
-      } catch {
-        return '[Object]';
-      }
-    }
-    return String(value);
   }
 }
 
 // Usage
-import { logger } from "jellylogger";
-logger.setOptions({
-  pluggableFormatter: new CustomFormatter({
-    timestampFormat: 'human',
-    includeLevel: true
-  })
-});
+const bufferedFileTransport = new BufferedTransport(
+  new FileTransport("./logs/app.log"),
+  { bufferSize: 50, flushInterval: 3000 }
+);
+
+logger.addTransport(bufferedFileTransport);
 ```
 
-### Metric-Aware Formatter
+### HTTP API Transport
 
 ```typescript
-class MetricsFormatter implements LogFormatter {
-  private metricsCollector: MetricsCollector;
+class HttpApiTransport implements Transport {
+  constructor(
+    private endpoint: string,
+    private options: { 
+      apiKey?: string; 
+      timeout?: number; 
+      retries?: number 
+    } = {}
+  ) {}
 
-  constructor(metricsCollector: MetricsCollector) {
-    this.metricsCollector = metricsCollector;
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    const redacted = getRedactedEntry(entry, options?.redaction, 'file');
+    
+    const payload = {
+      timestamp: redacted.timestamp,
+      level: redacted.levelName,
+      message: redacted.message,
+      data: redacted.data,
+      service: process.env.SERVICE_NAME || 'unknown'
+    };
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+
+    if (this.options.apiKey) {
+      headers['Authorization'] = `Bearer ${this.options.apiKey}`;
+    }
+
+    try {
+      await this.sendWithRetry(payload, headers);
+    } catch (error) {
+      console.error('HttpApiTransport error:', error);
+    }
   }
 
-  format(entry: LogEntry): string {
-    // Collect metrics while formatting
-    this.metricsCollector.increment('logs_total', {
-      level: entry.levelName.toLowerCase(),
-      hasData: entry.data ? 'true' : 'false'
-    });
+  private async sendWithRetry(
+    payload: any, 
+    headers: Record<string, string>,
+    attempt: number = 1
+  ): Promise<void> {
+    const maxRetries = this.options.retries ?? 3;
 
-    if (entry.level <= LogLevel.ERROR) {
-      this.metricsCollector.increment('errors_total');
+    try {
+      const response = await fetch(this.endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(this.options.timeout ?? 5000)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+    } catch (error) {
+      if (attempt < maxRetries) {
+        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.sendWithRetry(payload, headers, attempt + 1);
+      }
+      throw error;
     }
+  }
 
-    // Check for performance metrics in data
-    if (entry.data?.duration) {
-      this.metricsCollector.histogram('request_duration_ms', 
-        Number(entry.data.duration));
-    }
-
-    // Standard formatting
-    return JSON.stringify({
-      '@timestamp': entry.timestamp,
-      '@level': entry.levelName.toLowerCase(),
-      '@message': entry.message,
-      ...entry.data,
-      '@args': entry.args
-    });
+  async flush(): Promise<void> {
+    // HTTP API transport doesn't need explicit flushing
   }
 }
 
-// Usage with metrics collection
-const metricsCollector = new PrometheusMetrics();
+// Usage
+const apiTransport = new HttpApiTransport("https://logs.example.com/api/logs", {
+  apiKey: process.env.LOG_API_KEY,
+  timeout: 10000,
+  retries: 3
+});
+
+logger.addTransport(apiTransport);
+```
+
+### Email Transport for Critical Alerts
+
+```typescript
+class EmailTransport implements Transport {
+  private lastEmailTime = 0;
+  private readonly throttleMs = 300000; // 5 minutes
+
+  constructor(
+    private smtpConfig: {
+      host: string;
+      port: number;
+      user: string;
+      password: string;
+      to: string[];
+    }
+  ) {}
+
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    // Only send emails for ERROR and FATAL levels
+    if (entry.level > LogLevel.ERROR) {
+      return;
+    }
+
+    // Throttle emails to prevent spam
+    const now = Date.now();
+    if (now - this.lastEmailTime < this.throttleMs) {
+      return;
+    }
+    this.lastEmailTime = now;
+
+    try {
+      const redacted = getRedactedEntry(entry, options?.redaction, 'file');
+      await this.sendEmail(redacted);
+    } catch (error) {
+      console.error('EmailTransport error:', error);
+    }
+  }
+
+  private async sendEmail(entry: LogEntry): Promise<void> {
+    const subject = `[${entry.levelName}] Application Alert`;
+    const body = `
+      Timestamp: ${entry.timestamp}
+      Level: ${entry.levelName}
+      Message: ${entry.message}
+      
+      ${entry.data ? 'Data:\n' + JSON.stringify(entry.data, null, 2) : ''}
+      
+      ${entry.args.processedArgs.length > 0 ? 'Args:\n' + entry.args.processedArgs.join('\n') : ''}
+    `;
+
+    // Implementation would use your preferred email service
+    // (nodemailer, SendGrid, etc.)
+    await this.sendEmailWithService(subject, body);
+  }
+
+  private async sendEmailWithService(subject: string, body: string): Promise<void> {
+    // Implement actual email sending
+    throw new Error("Implement email service integration");
+  }
+
+  async flush(): Promise<void> {
+    // Email transport doesn't need explicit flushing
+  }
+}
+
+// Usage
+const emailTransport = new EmailTransport({
+  host: "smtp.example.com",
+  port: 587,
+  user: process.env.SMTP_USER!,
+  password: process.env.SMTP_PASSWORD!,
+  to: ["alerts@example.com", "ops-team@example.com"]
+});
+
+logger.addTransport(emailTransport);
+```
+
+---
+
+## Custom Formatters
+
+### JSON Pretty Formatter
+
+```typescript
+import type { LogFormatter, LogEntry, CustomConsoleColors } from "jellylogger";
+
+class JsonPrettyFormatter implements LogFormatter {
+  format(entry: LogEntry, options?: { consoleColors?: CustomConsoleColors; useColors?: boolean }): string {
+    const formatted = {
+      time: entry.timestamp,
+      level: entry.levelName,
+      msg: entry.message,
+      ...(entry.data && Object.keys(entry.data).length > 0 && { data: entry.data }),
+      ...(entry.args.processedArgs.length > 0 && { args: entry.args.processedArgs })
+    };
+
+    return JSON.stringify(formatted, null, 2);
+  }
+}
+
+// Usage
 logger.setOptions({
-  pluggableFormatter: new MetricsFormatter(metricsCollector)
+  pluggableFormatter: new JsonPrettyFormatter()
+});
+```
+
+### Syslog-Style Formatter
+
+```typescript
+class SyslogFormatter implements LogFormatter {
+  private facilityMap = {
+    [LogLevel.FATAL]: 0,   // Emergency
+    [LogLevel.ERROR]: 3,   // Error
+    [LogLevel.WARN]: 4,    // Warning
+    [LogLevel.INFO]: 6,    // Informational
+    [LogLevel.DEBUG]: 7,   // Debug
+    [LogLevel.TRACE]: 7    // Debug
+  };
+
+  format(entry: LogEntry): string {
+    const priority = this.facilityMap[entry.level] ?? 6;
+    const hostname = process.env.HOSTNAME || 'localhost';
+    const appName = process.env.SERVICE_NAME || 'app';
+    const processId = process.pid;
+
+    // Syslog format: <priority>timestamp hostname app-name[pid]: message
+    let message = `<${priority}>${entry.timestamp} ${hostname} ${appName}[${processId}]: ${entry.message}`;
+
+    if (entry.data && Object.keys(entry.data).length > 0) {
+      const dataStr = Object.entries(entry.data)
+        .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+        .join(' ');
+      message += ` ${dataStr}`;
+    }
+
+    return message;
+  }
+}
+
+// Usage
+logger.setOptions({
+  pluggableFormatter: new SyslogFormatter()
+});
+```
+
+### Colorized Development Formatter
+
+```typescript
+import { LogLevel } from "jellylogger";
+import { getConsistentFormatterColors, colorizeLevelText, dimText } from "jellylogger";
+
+class DevFormatter implements LogFormatter {
+  format(entry: LogEntry, options?: { consoleColors?: CustomConsoleColors; useColors?: boolean }): string {
+    const colors = getConsistentFormatterColors(options);
+    const useColors = options?.useColors !== false && colors;
+
+    // Extract relevant parts
+    const time = new Date(entry.timestamp).toLocaleTimeString();
+    const level = entry.levelName.padEnd(5);
+    const message = entry.message;
+
+    if (useColors) {
+      const coloredTime = dimText(time, colors);
+      const coloredLevel = colorizeLevelText(level, entry.level, colors);
+      const emoji = this.getLevelEmoji(entry.level);
+      
+      let output = `${coloredTime} ${emoji} ${coloredLevel} ${message}`;
+      
+      if (entry.data && Object.keys(entry.data).length > 0) {
+        output += `\n${dimText('  └─', colors)} ${JSON.stringify(entry.data, null, 2)}`;
+      }
+      
+      return output;
+    } else {
+      return `${time} [${level}] ${message}`;
+    }
+  }
+
+  private getLevelEmoji(level: LogLevel): string {
+    switch (level) {
+      case LogLevel.FATAL: return '💀';
+      case LogLevel.ERROR: return '❌';
+      case LogLevel.WARN: return '⚠️';
+      case LogLevel.INFO: return 'ℹ️';
+      case LogLevel.DEBUG: return '🐛';
+      case LogLevel.TRACE: return '🔍';
+      default: return '📝';
+    }
+  }
+}
+
+// Usage
+logger.setOptions({
+  pluggableFormatter: new DevFormatter()
+});
+```
+
+### Structured Data Formatter
+
+```typescript
+class StructuredFormatter implements LogFormatter {
+  format(entry: LogEntry): string {
+    const structured = {
+      '@timestamp': entry.timestamp,
+      '@level': entry.levelName,
+      '@message': entry.message,
+      '@version': '1',
+      logger_name: 'jellylogger',
+      thread_name: 'main',
+      level_value: entry.level * 1000, // Convert to syslog-style numbers
+    };
+
+    // Flatten nested data with dot notation
+    if (entry.data) {
+      Object.assign(structured, this.flattenObject(entry.data, ''));
+    }
+
+    // Add args as separate fields
+    if (entry.args.processedArgs.length > 0) {
+      entry.args.processedArgs.forEach((arg, index) => {
+        structured[`arg_${index}`] = arg;
+      });
+    }
+
+    return JSON.stringify(structured);
+  }
+
+  private flattenObject(obj: any, prefix: string): Record<string, any> {
+    const flattened: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(obj)) {
+      const newKey = prefix ? `${prefix}.${key}` : key;
+
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        Object.assign(flattened, this.flattenObject(value, newKey));
+      } else {
+        flattened[newKey] = value;
+      }
+    }
+
+    return flattened;
+  }
+}
+
+// Usage
+logger.setOptions({
+  pluggableFormatter: new StructuredFormatter()
 });
 ```
 
@@ -499,791 +607,791 @@ userLogger.setOptions({
 });
 ```
 
----
-
-## Plugin System
-
-### Creating Reusable Plugins
+### Compliance Redactor
 
 ```typescript
-interface LoggerPlugin {
+class ComplianceRedactor {
+  static createGDPRConfig(): RedactionConfig {
+    return {
+      keys: [
+        'email', 'phone', 'address', 'name',
+        'user.email', 'user.phone', 'user.address',
+        'customer.*', 'user.personal.*'
+      ],
+      stringPatterns: [
+        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, // Email
+        /\b\+?[\d\s\-\(\)]{10,}\b/g,                             // Phone
+        /\b\d{1,5}\s[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|place|pl)\b/gi // Address
+      ],
+      fieldConfigs: {
+        'user.id': {
+          replacement: (value) => {
+            // Hash user IDs for analytics while maintaining referential integrity
+            return this.hashValue(String(value));
+          }
+        },
+        'consent.*': {
+          disabled: true // Never redact consent information
+        }
+      },
+      auditHook: (event) => {
+        // Log all redaction events for GDPR compliance auditing
+        this.logComplianceEvent('GDPR', event);
+      }
+    };
+  }
+
+  static createPCIConfig(): RedactionConfig {
+    return {
+      keys: ['card', 'credit', 'payment', '*.card*', '*.payment*'],
+      stringPatterns: [
+        /\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b/g, // Credit card
+        /\b\d{3,4}\b/g,                                     // CVV (when in payment context)
+      ],
+      valuePatterns: [
+        /\b\d{13,19}\b/g // Any sequence that could be a card number
+      ],
+      replacement: '[PCI_REDACTED]',
+      auditHook: (event) => {
+        this.logComplianceEvent('PCI', event);
+      }
+    };
+  }
+
+  private static hashValue(value: string): string {
+    // Simple hash function - use a proper cryptographic hash in production
+    let hash = 0;
+    for (let i = 0; i < value.length; i++) {
+      const char = value.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return `hash_${Math.abs(hash).toString(36)}`;
+  }
+
+  private static logComplianceEvent(standard: string, event: any): void {
+    // Log to compliance system
+    console.log(`[${standard}_AUDIT]`, {
+      timestamp: event.timestamp,
+      type: event.type,
+      path: event.context.path,
+      standard
+    });
+  }
+}
+
+// Usage
+logger.setOptions({
+  redaction: ComplianceRedactor.createGDPRConfig()
+});
+
+// Or combine multiple compliance standards
+const combinedConfig: RedactionConfig = {
+  ...ComplianceRedactor.createGDPRConfig(),
+  ...ComplianceRedactor.createPCIConfig(),
+  keys: [
+    ...ComplianceRedactor.createGDPRConfig().keys!,
+    ...ComplianceRedactor.createPCIConfig().keys!
+  ]
+};
+```
+
+---
+
+## Plugin Architecture
+
+### Plugin Interface
+
+```typescript
+interface JellyLoggerPlugin {
   name: string;
-  install(logger: JellyLogger, options?: any): void;
+  version: string;
+  install(logger: JellyLogger): void;
   uninstall?(logger: JellyLogger): void;
 }
 
-class PerformancePlugin implements LoggerPlugin {
-  name = 'performance';
-  private startTimes = new Map<string, number>();
-
-  install(logger: JellyLogger, options: { autoInstrument?: boolean } = {}): void {
-    // Add performance timing methods
-    (logger as any).startTimer = (name: string) => {
-      this.startTimes.set(name, performance.now());
-    };
-
-    (logger as any).endTimer = (name: string, message?: string) => {
-      const start = this.startTimes.get(name);
-      if (start) {
-        const duration = performance.now() - start;
-        this.startTimes.delete(name);
-        logger.info(message || `Timer ${name} completed`, { 
-          timer: name, 
-          duration: `${duration.toFixed(2)}ms` 
-        });
-      }
-    };
-
-    // Auto-instrument async functions if enabled
-    if (options.autoInstrument) {
-      this.autoInstrument(logger);
-    }
-  }
-
-  private autoInstrument(logger: JellyLogger): void {
-    const originalMethods = ['info', 'warn', 'error', 'debug'];
-    
-    originalMethods.forEach(method => {
-      const original = (logger as any)[method];
-      (logger as any)[method] = (...args: any[]) => {
-        const start = performance.now();
-        const result = original.apply(logger, args);
-        const duration = performance.now() - start;
-        
-        if (duration > 10) { // Log slow operations
-          logger.debug(`Slow log operation: ${method}`, { duration: `${duration.toFixed(2)}ms` });
-        }
-        
-        return result;
-      };
-    });
-  }
-}
-
-class RequestTrackingPlugin implements LoggerPlugin {
-  name = 'requestTracking';
-  private activeRequests = new Map<string, any>();
-
-  install(logger: JellyLogger): void {
-    (logger as any).startRequest = (requestId: string, data: any) => {
-      this.activeRequests.set(requestId, { ...data, startTime: Date.now() });
-      logger.info('Request started', { requestId, ...data });
-    };
-
-    (logger as any).endRequest = (requestId: string, data?: any) => {
-      const request = this.activeRequests.get(requestId);
-      if (request) {
-        const duration = Date.now() - request.startTime;
-        this.activeRequests.delete(requestId);
-        logger.info('Request completed', { 
-          requestId, 
-          duration: `${duration}ms`,
-          ...data 
-        });
-      }
-    };
-
-    (logger as any).getActiveRequests = () => {
-      return Array.from(this.activeRequests.keys());
-    };
-  }
-}
-
-// Plugin manager
 class PluginManager {
-  private plugins = new Map<string, LoggerPlugin>();
+  private plugins: Map<string, JellyLoggerPlugin> = new Map();
 
-  use(plugin: LoggerPlugin, logger: JellyLogger, options?: any): this {
+  install(plugin: JellyLoggerPlugin, logger: JellyLogger): void {
     if (this.plugins.has(plugin.name)) {
       throw new Error(`Plugin ${plugin.name} is already installed`);
     }
-    
-    plugin.install(logger, options);
+
+    plugin.install(logger);
     this.plugins.set(plugin.name, plugin);
-    return this;
+    console.log(`Installed plugin: ${plugin.name} v${plugin.version}`);
   }
 
-  remove(pluginName: string, logger: JellyLogger): boolean {
-    const plugin = this.plugins.get(pluginName);
-    if (plugin) {
-      plugin.uninstall?.(logger);
-      this.plugins.delete(pluginName);
-      return true;
+  uninstall(name: string, logger: JellyLogger): void {
+    const plugin = this.plugins.get(name);
+    if (!plugin) {
+      throw new Error(`Plugin ${name} is not installed`);
     }
-    return false;
+
+    if (plugin.uninstall) {
+      plugin.uninstall(logger);
+    }
+    
+    this.plugins.delete(name);
+    console.log(`Uninstalled plugin: ${name}`);
   }
 
-  list(): string[] {
-    return Array.from(this.plugins.keys());
+  list(): JellyLoggerPlugin[] {
+    return Array.from(this.plugins.values());
   }
 }
 
-// Usage
 const pluginManager = new PluginManager();
-pluginManager
-  .use(new PerformancePlugin(), logger, { autoInstrument: true })
-  .use(new RequestTrackingPlugin(), logger);
-
-// Now logger has additional methods
-(logger as any).startTimer('database-query');
-// ... database operation
-(logger as any).endTimer('database-query', 'User lookup completed');
-
-(logger as any).startRequest('req-123', { method: 'GET', path: '/users' });
-// ... request processing
-(logger as any).endRequest('req-123', { statusCode: 200 });
 ```
 
----
-
-## Integration Patterns
-
-### Monitoring Integration
+### Performance Monitoring Plugin
 
 ```typescript
-class MonitoringIntegration {
-  private metricsClient: MetricsClient;
-  private alertManager: AlertManager;
+class PerformancePlugin implements JellyLoggerPlugin {
+  name = 'performance-monitor';
+  version = '1.0.0';
+  
+  private originalLog?: Function;
+  private metrics = {
+    totalLogs: 0,
+    avgProcessingTime: 0,
+    errorCount: 0
+  };
 
-  constructor(metricsClient: MetricsClient, alertManager: AlertManager) {
-    this.metricsClient = metricsClient;
-    this.alertManager = alertManager;
+  install(logger: JellyLogger): void {
+    // Wrap the log method to add performance monitoring
+    this.originalLog = (logger as any).log;
+    
+    (logger as any).log = this.createWrapper((logger as any).log.bind(logger));
+    
+    // Add metrics endpoint
+    (logger as any).getMetrics = () => this.metrics;
+    
+    // Start periodic reporting
+    setInterval(() => this.reportMetrics(), 60000); // Every minute
   }
 
-  createEnhancedLogger(): JellyLogger {
-    const enhancedLogger = logger.child({});
-    
-    // Override logging methods to collect metrics
-    const originalMethods = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'];
-    
-    originalMethods.forEach(level => {
-      const original = (enhancedLogger as any)[level];
-      (enhancedLogger as any)[level] = (...args: any[]) => {
-        // Collect metrics
-        this.metricsClient.increment('logs.total', { level });
-        
-        // Check for alerts
-        if (level === 'fatal' || level === 'error') {
-          this.handleErrorAlert(level, args);
-        }
-        
-        // Call original method
-        return original.apply(enhancedLogger, args);
-      };
-    });
-
-    return enhancedLogger;
-  }
-
-  private handleErrorAlert(level: string, args: any[]): void {
-    const [message, ...otherArgs] = args;
-    
-    // Extract error context
-    const errorData = otherArgs.find(arg => 
-      typeof arg === 'object' && arg !== null && !Array.isArray(arg)
-    );
-
-    // Send alert based on severity and frequency
-    if (level === 'fatal') {
-      this.alertManager.sendImmediate({
-        severity: 'critical',
-        title: 'Fatal Error Occurred',
-        message: String(message),
-        context: errorData
-      });
-    } else {
-      // Rate-limited error alerts
-      this.alertManager.sendThrottled({
-        severity: 'warning',
-        title: 'Error Rate Increase',
-        message: String(message),
-        context: errorData
-      }, { window: '5m', threshold: 10 });
+  uninstall(logger: JellyLogger): void {
+    if (this.originalLog) {
+      (logger as any).log = this.originalLog;
     }
+    delete (logger as any).getMetrics;
+  }
+
+  private createWrapper(originalLog: Function) {
+    return (...args: any[]) => {
+      const start = performance.now();
+      
+      try {
+        const result = originalLog(...args);
+        
+        // Update metrics
+        const duration = performance.now() - start;
+        this.updateMetrics(duration, false);
+        
+        return result;
+      } catch (error) {
+        this.updateMetrics(performance.now() - start, true);
+        throw error;
+      }
+    };
+  }
+
+  private updateMetrics(duration: number, isError: boolean): void {
+    this.metrics.totalLogs++;
+    this.metrics.avgProcessingTime = 
+      (this.metrics.avgProcessingTime + duration) / 2;
+    
+    if (isError) {
+      this.metrics.errorCount++;
+    }
+  }
+
+  private reportMetrics(): void {
+    console.log('[PERFORMANCE]', this.metrics);
   }
 }
 
 // Usage
-const monitoring = new MonitoringIntegration(
-  new PrometheusClient(),
-  new SlackAlertManager()
-);
-
-const monitoredLogger = monitoring.createEnhancedLogger();
+pluginManager.install(new PerformancePlugin(), logger);
 ```
 
-### Microservice Correlation
+### Request Correlation Plugin
 
 ```typescript
-class CorrelationTracker {
-  private static instance: CorrelationTracker;
-  private correlationStore = new Map<string, any>();
+class CorrelationPlugin implements JellyLoggerPlugin {
+  name = 'request-correlation';
+  version = '1.0.0';
+  
+  private storage = new AsyncLocalStorage<{ correlationId: string }>();
 
-  static getInstance(): CorrelationTracker {
-    if (!this.instance) {
-      this.instance = new CorrelationTracker();
-    }
-    return this.instance;
-  }
-
-  createCorrelatedLogger(correlationId?: string): JellyLogger {
-    const id = correlationId || crypto.randomUUID();
+  install(logger: JellyLogger): void {
+    // Override child logger creation to include correlation ID
+    const originalChild = logger.child.bind(logger);
     
-    const correlatedLogger = logger.child({
-      context: { correlationId: id }
-    });
-
-    // Store correlation context
-    this.correlationStore.set(id, {
-      startTime: Date.now(),
-      service: process.env.SERVICE_NAME || 'unknown',
-      version: process.env.SERVICE_VERSION || '1.0.0'
-    });
+    logger.child = (options = {}) => {
+      const context = this.storage.getStore();
+      if (context) {
+        options.context = {
+          ...options.context,
+          correlationId: context.correlationId
+        };
+      }
+      return originalChild(options);
+    };
 
     // Add correlation methods
-    (correlatedLogger as any).addCorrelationContext = (data: Record<string, any>) => {
-      const existing = this.correlationStore.get(id) || {};
-      this.correlationStore.set(id, { ...existing, ...data });
+    (logger as any).withCorrelation = (correlationId: string, fn: Function) => {
+      return this.storage.run({ correlationId }, fn);
     };
 
-    (correlatedLogger as any).getCorrelationContext = () => {
-      return this.correlationStore.get(id);
+    (logger as any).setCorrelationId = (correlationId: string) => {
+      // For manual correlation setting
+      return this.storage.run({ correlationId }, () => {});
     };
+  }
 
-    (correlatedLogger as any).endCorrelation = () => {
-      const context = this.correlationStore.get(id);
-      if (context) {
-        const duration = Date.now() - context.startTime;
-        correlatedLogger.info('Correlation ended', { 
-          duration: `${duration}ms`,
-          ...context 
-        });
-        this.correlationStore.delete(id);
-      }
-    };
-
-    return correlatedLogger;
+  uninstall(logger: JellyLogger): void {
+    // Restore original child method
+    delete (logger as any).withCorrelation;
+    delete (logger as any).setCorrelationId;
   }
 }
 
-// Express middleware
-function correlationMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const correlationId = req.headers['x-correlation-id'] as string || crypto.randomUUID();
+// Usage
+pluginManager.install(new CorrelationPlugin(), logger);
+
+// In your request handler
+app.use((req, res, next) => {
+  const correlationId = req.headers['x-correlation-id'] || generateUUID();
   
-  const tracker = CorrelationTracker.getInstance();
-  const correlatedLogger = tracker.createCorrelatedLogger(correlationId);
-  
-  // Add to request
-  req.correlationId = correlationId;
-  req.logger = correlatedLogger;
-  
-  // Set response header
-  res.setHeader('x-correlation-id', correlationId);
-  
-  // Add request context
-  (correlatedLogger as any).addCorrelationContext({
-    method: req.method,
-    path: req.path,
-    userAgent: req.headers['user-agent'],
-    ip: req.ip
-  });
-  
-  // End correlation on response
-  res.on('finish', () => {
-    (correlatedLogger as any).addCorrelationContext({
-      statusCode: res.statusCode,
-      responseTime: Date.now() - req.startTime
-    });
-    (correlatedLogger as any).endCorrelation();
-  });
-  
-  next();
-}
-```
-
-### Testing Integration
-
-```typescript
-// Test utilities for custom extensions
-class TestingUtilities {
-  static createMockTransport(): { transport: Transport; logs: LogEntry[] } {
-    const logs: LogEntry[] = [];
-    
-    const transport: Transport = {
-      async log(entry: LogEntry): Promise<void> {
-        logs.push(structuredClone(entry));
-      },
-      async flush(): Promise<void> {
-        // No-op for testing
-      }
-    };
-
-    return { transport, logs };
-  }
-
-  static createTimedLogger(): { logger: JellyLogger; getElapsed: () => number } {
-    const startTime = Date.now();
-    const timedLogger = logger.child({});
-    
-    return {
-      logger: timedLogger,
-      getElapsed: () => Date.now() - startTime
-    };
-  }
-
-  static assertLogContains(logs: LogEntry[], message: string, level?: LogLevel): boolean {
-    return logs.some(log => 
-      log.message.includes(message) && 
-      (level === undefined || log.level === level)
-    );
-  }
-
-  static assertRedactionApplied(logs: LogEntry[], path: string): boolean {
-    return logs.some(log => {
-      const str = JSON.stringify(log);
-      return str.includes('[REDACTED]') || str.includes('[SENSITIVE]');
-    });
-  }
-}
-
-// Example test with Bun test runner
-import { describe, test, expect } from 'bun:test';
-
-describe('Custom Transport', () => {
-  test('should log to custom transport', async () => {
-    const { transport, logs } = TestingUtilities.createMockTransport();
-    
-    const testLogger = logger.child({});
-    testLogger.addTransport(transport);
-    
-    testLogger.info('Test message', { userId: 123 });
-    
-    await testLogger.flushAll();
-    
-    expect(logs).toHaveLength(1);
-    expect(logs[0].message).toBe('Test message');
-    expect(logs[0].data?.userId).toBe(123);
-  });
-
-  test('should apply custom redaction', () => {
-    const { transport, logs } = TestingUtilities.createMockTransport();
-    
-    const testLogger = logger.child({});
-    testLogger.addTransport(transport);
-    testLogger.setOptions({
-      redaction: {
-        keys: ['password'],
-        replacement: '[HIDDEN]'
-      }
-    });
-    
-    testLogger.info('Login attempt', { username: 'user', password: 'secret' });
-    
-    expect(TestingUtilities.assertRedactionApplied(logs, 'password')).toBe(true);
+  (logger as any).withCorrelation(correlationId, () => {
+    // All logs within this scope will include the correlation ID
+    logger.info("Request started", { method: req.method, url: req.url });
+    next();
   });
 });
 ```
 
 ---
 
-## Best Practices for Extensions
+## Integration Examples
 
-### Performance Considerations
+### Express.js Middleware
 
 ```typescript
-// Efficient transport with connection pooling
-class HighPerformanceTransport implements Transport {
-  private connectionPool: ConnectionPool;
-  private writeQueue: LogEntry[] = [];
-  private batchProcessor: BatchProcessor;
+import express from 'express';
+import { logger } from 'jellylogger';
 
-  constructor(options: {
-    maxConnections?: number;
-    batchSize?: number;
-    batchTimeout?: number;
-  } = {}) {
-    this.connectionPool = new ConnectionPool({
-      max: options.maxConnections ?? 10,
-      acquireTimeoutMillis: 5000
-    });
+function createLoggingMiddleware() {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const start = Date.now();
+    const requestId = req.headers['x-request-id'] || generateUUID();
     
-    this.batchProcessor = new BatchProcessor({
-      batchSize: options.batchSize ?? 100,
-      batchTimeout: options.batchTimeout ?? 1000,
-      processor: this.processBatch.bind(this)
+    // Create request-specific logger
+    const requestLogger = logger.child({
+      context: {
+        requestId,
+        method: req.method,
+        url: req.url,
+        userAgent: req.headers['user-agent'],
+        ip: req.ip
+      }
+    });
+
+    // Add logger to request object
+    (req as any).logger = requestLogger;
+
+    // Log request start
+    requestLogger.info("Request started");
+
+    // Capture response details
+    const originalSend = res.send;
+    res.send = function(body) {
+      const duration = Date.now() - start;
+      
+      requestLogger.info("Request completed", {
+        statusCode: res.statusCode,
+        duration: `${duration}ms`,
+        contentLength: body ? body.length : 0
+      });
+
+      return originalSend.call(this, body);
+    };
+
+    next();
+  };
+}
+
+// Usage
+const app = express();
+app.use(createLoggingMiddleware());
+
+app.get('/api/users', (req, res) => {
+  const logger = (req as any).logger;
+  logger.info("Fetching users");
+  
+  try {
+    // Your logic here
+    logger.info("Users fetched successfully", { count: users.length });
+    res.json(users);
+  } catch (error) {
+    logger.error("Failed to fetch users", { error: error.message });
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+```
+
+### Database Query Logger
+
+```typescript
+class DatabaseLogger {
+  private queryLogger = logger.child({ messagePrefix: "DB" });
+
+  logQuery(sql: string, params?: any[], duration?: number) {
+    this.queryLogger.debug("SQL Query", {
+      sql: this.sanitizeSQL(sql),
+      paramCount: params?.length || 0,
+      duration: duration ? `${duration}ms` : undefined
     });
   }
 
-  async log(entry: LogEntry): Promise<void> {
-    // Non-blocking add to batch
-    this.batchProcessor.add(entry);
+  logSlowQuery(sql: string, params?: any[], duration: number) {
+    this.queryLogger.warn("Slow Query Detected", {
+      sql: this.sanitizeSQL(sql),
+      paramCount: params?.length || 0,
+      duration: `${duration}ms`,
+      threshold: "1000ms"
+    });
   }
 
-  private async processBatch(entries: LogEntry[]): Promise<void> {
-    const connection = await this.connectionPool.acquire();
-    try {
-      await connection.batchInsert(entries);
-    } finally {
-      this.connectionPool.release(connection);
+  logQueryError(sql: string, error: Error, params?: any[]) {
+    this.queryLogger.error("Query Failed", {
+      sql: this.sanitizeSQL(sql),
+      error: error.message,
+      paramCount: params?.length || 0
+    });
+  }
+
+  private sanitizeSQL(sql: string): string {
+    // Remove sensitive data from SQL for logging
+    return sql
+      .replace(/password\s*=\s*'[^']*'/gi, "password='***'")
+      .replace(/token\s*=\s*'[^']*'/gi, "token='***'");
+  }
+}
+
+// Usage with an ORM
+const dbLogger = new DatabaseLogger();
+
+// Wrap database operations
+function executeQuery(sql: string, params?: any[]) {
+  const start = Date.now();
+  
+  dbLogger.logQuery(sql, params);
+  
+  try {
+    const result = database.execute(sql, params);
+    const duration = Date.now() - start;
+    
+    if (duration > 1000) {
+      dbLogger.logSlowQuery(sql, params, duration);
     }
-  }
-
-  async flush(): Promise<void> {
-    await this.batchProcessor.flush();
+    
+    return result;
+  } catch (error) {
+    dbLogger.logQueryError(sql, error, params);
+    throw error;
   }
 }
 ```
 
-### Error Handling
+---
+
+## Testing Custom Extensions
+
+### Testing Custom Transports
 
 ```typescript
-class ResilientTransport implements Transport {
-  private primaryTransport: Transport;
-  private fallbackTransport: Transport;
-  private errorCount = 0;
-  private lastError?: Error;
+import { describe, it, expect, beforeEach } from 'bun:test';
+import { MemoryTransport } from '../test/test-utils';
 
-  constructor(primary: Transport, fallback: Transport) {
-    this.primaryTransport = primary;
-    this.fallbackTransport = fallback;
+describe('CustomTransport', () => {
+  let transport: CustomTransport;
+  let memoryBackend: MemoryTransport;
+
+  beforeEach(() => {
+    memoryBackend = new MemoryTransport();
+    transport = new CustomTransport(memoryBackend);
+  });
+
+  it('should log entries correctly', async () => {
+    const entry: LogEntry = {
+      timestamp: new Date().toISOString(),
+      level: LogLevel.INFO,
+      levelName: 'INFO',
+      message: 'Test message',
+      args: { processedArgs: [], hasComplexArgs: false }
+    };
+
+    await transport.log(entry);
+
+    expect(memoryBackend.logs).toHaveLength(1);
+    expect(memoryBackend.logs[0].message).toBe('Test message');
+  });
+
+  it('should handle errors gracefully', async () => {
+    const faultyTransport = new CustomTransport(null); // Invalid backend
+    
+    // Should not throw
+    await expect(faultyTransport.log(entry)).resolves.toBeUndefined();
+  });
+
+  it('should apply redaction', async () => {
+    const entry: LogEntry = {
+      timestamp: new Date().toISOString(),
+      level: LogLevel.INFO,
+      levelName: 'INFO',
+      message: 'User login',
+      args: { processedArgs: [], hasComplexArgs: false },
+      data: { password: 'secret123' }
+    };
+
+    const options: TransportOptions = {
+      redaction: {
+        keys: ['password']
+      }
+    };
+
+    await transport.log(entry, options);
+
+    expect(memoryBackend.logs[0].data.password).toBe('[REDACTED]');
+  });
+});
+```
+
+### Testing Custom Formatters
+
+```typescript
+describe('CustomFormatter', () => {
+  let formatter: CustomFormatter;
+
+  beforeEach(() => {
+    formatter = new CustomFormatter();
+  });
+
+  it('should format log entries correctly', () => {
+    const entry: LogEntry = {
+      timestamp: '2023-12-07T15:30:45.123Z',
+      level: LogLevel.INFO,
+      levelName: 'INFO',
+      message: 'Test message',
+      args: { processedArgs: ['arg1', 'arg2'], hasComplexArgs: false },
+      data: { userId: 123, action: 'login' }
+    };
+
+    const result = formatter.format(entry);
+    
+    expect(result).toContain('Test message');
+    expect(result).toContain('INFO');
+    expect(result).toContain('2023-12-07T15:30:45.123Z');
+  });
+
+  it('should handle empty data', () => {
+    const entry: LogEntry = {
+      timestamp: '2023-12-07T15:30:45.123Z',
+      level: LogLevel.INFO,
+      levelName: 'INFO',
+      message: 'Test message',
+      args: { processedArgs: [], hasComplexArgs: false }
+    };
+
+    const result = formatter.format(entry);
+    
+    expect(result).not.toContain('undefined');
+    expect(result).not.toContain('null');
+  });
+
+  it('should apply colors when requested', () => {
+    const entry: LogEntry = {
+      timestamp: '2023-12-07T15:30:45.123Z',
+      level: LogLevel.ERROR,
+      levelName: 'ERROR',
+      message: 'Error message',
+      args: { processedArgs: [], hasComplexArgs: false }
+    };
+
+    const result = formatter.format(entry, {
+      useColors: true,
+      consoleColors: { [LogLevel.ERROR]: '\x1b[31m' }
+    });
+    
+    expect(result).toContain('\x1b[31m'); // ANSI red color
+  });
+});
+```
+
+### Integration Testing
+
+```typescript
+describe('Extension Integration', () => {
+  let testLogger: JellyLogger;
+  let memoryTransport: MemoryTransport;
+
+  beforeEach(() => {
+    memoryTransport = new MemoryTransport();
+    testLogger = new JellyLoggerImpl();
+    testLogger.addTransport(memoryTransport);
+  });
+
+  it('should work with custom transport and formatter', async () => {
+    const customFormatter = new JsonPrettyFormatter();
+    const customTransport = new BufferedTransport(memoryTransport, {
+      bufferSize: 2,
+      flushInterval: 100
+    });
+
+    testLogger.setOptions({
+      pluggableFormatter: customFormatter
+    });
+    testLogger.addTransport(customTransport);
+
+    testLogger.info('Test message 1', { id: 1 });
+    testLogger.info('Test message 2', { id: 2 });
+
+    // Wait for buffer to flush
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    expect(memoryTransport.logs).toHaveLength(2);
+    
+    // Check that custom formatter was used
+    const loggedEntry = memoryTransport.logs[0];
+    expect(loggedEntry.message).toBe('Test message 1');
+  });
+
+  it('should work with custom redaction', async () => {
+    const customRedactor = new HealthcareRedactor();
+    
+    testLogger.setOptions({
+      redaction: customRedactor.createConfig()
+    });
+
+    testLogger.info('Patient data', {
+      patient: {
+        name: 'John Doe',
+        ssn: '123-45-6789'
+      }
+    });
+
+    const loggedEntry = memoryTransport.logs[0];
+    expect(loggedEntry.data.patient.name).toBe('John [REDACTED]');
+    expect(loggedEntry.data.patient.ssn).toBe('[REDACTED]');
+  });
+});
+```
+
+---
+
+## Best Practices
+
+### 1. Error Handling
+
+```typescript
+// Always handle errors gracefully in transports
+class RobustTransport implements Transport {
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    try {
+      await this.performLogging(entry, options);
+    } catch (error) {
+      // Log the error but don't re-throw
+      console.error(`${this.constructor.name} error:`, error);
+      
+      // Optionally, report to error tracking service
+      this.reportError(error, entry);
+    }
+  }
+
+  private reportError(error: Error, entry: LogEntry): void {
+    // Report to error tracking service without causing additional errors
+    try {
+      // Error reporting logic
+    } catch {
+      // Silently fail
+    }
+  }
+}
+```
+
+### 2. Performance Optimization
+
+```typescript
+// Use batching for expensive operations
+class BatchedTransport implements Transport {
+  private batchSize = 100;
+  private batch: LogEntry[] = [];
+  private flushPromise: Promise<void> | null = null;
+
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    this.batch.push(entry);
+
+    if (this.batch.length >= this.batchSize) {
+      return this.flushBatch(options);
+    }
+  }
+
+  private async flushBatch(options?: TransportOptions): Promise<void> {
+    if (this.flushPromise) {
+      return this.flushPromise;
+    }
+
+    this.flushPromise = this.processBatch(options);
+    await this.flushPromise;
+    this.flushPromise = null;
+  }
+
+  private async processBatch(options?: TransportOptions): Promise<void> {
+    const entries = this.batch.splice(0);
+    if (entries.length === 0) return;
+
+    try {
+      await this.sendBatch(entries, options);
+    } catch (error) {
+      console.error('Batch processing failed:', error);
+    }
+  }
+}
+```
+
+### 3. Configuration Validation
+
+```typescript
+// Validate configuration in constructors
+class ConfiguredTransport implements Transport {
+  constructor(private config: TransportConfig) {
+    this.validateConfig(config);
+  }
+
+  private validateConfig(config: TransportConfig): void {
+    if (!config.endpoint) {
+      throw new Error('endpoint is required');
+    }
+
+    if (config.timeout && config.timeout < 0) {
+      throw new Error('timeout must be positive');
+    }
+
+    if (config.retries && config.retries < 0) {
+      throw new Error('retries must be non-negative');
+    }
   }
 
   async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
-    try {
-      await this.primaryTransport.log(entry, options);
-      this.errorCount = 0; // Reset on success
-    } catch (error) {
-      this.errorCount++;
-      this.lastError = error instanceof Error ? error : new Error(String(error));
-      
-      console.warn(`Primary transport failed (${this.errorCount} errors):`, error);
-      
-      try {
-        await this.fallbackTransport.log(entry, options);
-      } catch (fallbackError) {
-        console.error('Both primary and fallback transports failed:', {
-          primary: error,
-          fallback: fallbackError
-        });
-        // Don't throw - logging should never crash the application
-      }
-    }
-  }
-
-  async flush(options?: TransportOptions): Promise<void> {
-    const promises = [
-      this.primaryTransport.flush?.(options),
-      this.fallbackTransport.flush?.(options)
-    ].filter(Boolean);
-    
-    await Promise.allSettled(promises);
-  }
-
-  getHealthStatus(): { healthy: boolean; errorCount: number; lastError?: string } {
-    return {
-      healthy: this.errorCount < 5,
-      errorCount: this.errorCount,
-      lastError: this.lastError?.message
-    };
+    // Implementation
   }
 }
 ```
 
-### Configuration Management
+### 4. Resource Cleanup
 
 ```typescript
-interface ExtensionConfig {
-  transports?: {
-    [name: string]: {
-      type: string;
-      enabled: boolean;
-      options: Record<string, any>;
-    };
-  };
-  formatters?: {
-    [name: string]: {
-      type: string;
-      options: Record<string, any>;
-    };
-  };
-  redaction?: RedactionConfig;
-}
+// Implement proper cleanup in flush method
+class ResourceTransport implements Transport {
+  private connection: Connection | null = null;
+  private timer: Timer | null = null;
 
-class ConfigurableLogger {
-  private transportRegistry = new Map<string, new (...args: any[]) => Transport>();
-  private formatterRegistry = new Map<string, new (...args: any[]) => LogFormatter>();
-
-  constructor() {
-    // Register built-in types
-    this.registerTransport('file', FileTransport);
-    this.registerTransport('console', ConsoleTransport);
-    this.registerTransport('discord', DiscordWebhookTransport);
-    this.registerTransport('websocket', WebSocketTransport);
-    
-    this.registerFormatter('logfmt', LogfmtFormatter);
-    this.registerFormatter('ndjson', NdjsonFormatter);
-  }
-
-  registerTransport(name: string, transportClass: new (...args: any[]) => Transport): void {
-    this.transportRegistry.set(name, transportClass);
-  }
-
-  registerFormatter(name: string, formatterClass: new (...args: any[]) => LogFormatter): void {
-    this.formatterRegistry.set(name, formatterClass);
-  }
-
-  configure(config: ExtensionConfig): JellyLogger {
-    const configuredLogger = logger.child({});
-    
-    // Clear existing transports
-    configuredLogger.clearTransports();
-    
-    // Configure transports
-    if (config.transports) {
-      for (const [name, transportConfig] of Object.entries(config.transports)) {
-        if (!transportConfig.enabled) continue;
-        
-        const TransportClass = this.transportRegistry.get(transportConfig.type);
-        if (!TransportClass) {
-          console.warn(`Unknown transport type: ${transportConfig.type}`);
-          continue;
-        }
-        
-        try {
-          const transport = new TransportClass(transportConfig.options);
-          configuredLogger.addTransport(transport);
-        } catch (error) {
-          console.error(`Failed to create transport ${name}:`, error);
-        }
-      }
-    }
-    
-    // Configure formatters and redaction
-    const options: any = {};
-    
-    if (config.formatters) {
-      // Apply first formatter found (could be enhanced to support multiple)
-      const [formatterName, formatterConfig] = Object.entries(config.formatters)[0] || [];
-      if (formatterName && formatterConfig) {
-        const FormatterClass = this.formatterRegistry.get(formatterConfig.type);
-        if (FormatterClass) {
-          options.pluggableFormatter = new FormatterClass(formatterConfig.options);
-        }
-      }
-    }
-    
-    if (config.redaction) {
-      options.redaction = config.redaction;
-    }
-    
-    configuredLogger.setOptions(options);
-    return configuredLogger;
-  }
-}
-
-// Usage with configuration file
-const configurableLogger = new ConfigurableLogger();
-
-// Register custom extensions
-configurableLogger.registerTransport('elasticsearch', ElasticsearchTransport);
-configurableLogger.registerFormatter('custom', CustomFormatter);
-
-// Load from config file
-const config: ExtensionConfig = JSON.parse(
-  await Bun.file('./logger-config.json').text()
-);
-
-const appLogger = configurableLogger.configure(config);
-```
-
----
-
-## Real-World Extension Examples
-
-### Distributed Tracing Integration
-
-```typescript
-class TracingLogger {
-  private tracer: Tracer;
-
-  constructor(tracer: Tracer) {
-    this.tracer = tracer;
-  }
-
-  createSpanLogger(operationName: string, parentSpan?: Span): JellyLogger & { span: Span } {
-    const span = this.tracer.startSpan(operationName, {
-      childOf: parentSpan
-    });
-
-    const spanLogger = logger.child({
-      context: {
-        traceId: span.context().toTraceId(),
-        spanId: span.context().toSpanId()
-      }
-    }) as JellyLogger & { span: Span };
-
-    spanLogger.span = span;
-
-    // Override logging methods to add to span
-    const originalMethods = ['error', 'warn', 'info', 'debug'];
-    originalMethods.forEach(method => {
-      const original = (spanLogger as any)[method];
-      (spanLogger as any)[method] = (...args: any[]) => {
-        // Add log to span
-        span.log({
-          level: method,
-          message: args[0],
-          data: args.slice(1)
-        });
-
-        // Call original method
-        return original.apply(spanLogger, args);
-      };
-    });
-
-    return spanLogger;
-  }
-}
-
-// Usage
-const tracingLogger = new TracingLogger(jaegerTracer);
-const spanLogger = tracingLogger.createSpanLogger('user-login');
-
-spanLogger.info('Login attempt started', { userId: 123 });
-// ... login logic
-spanLogger.span.finish();
-```
-
----
-
-## Migration and Compatibility
-
-### Wrapping Existing Loggers
-
-```typescript
-class LegacyLoggerAdapter implements Transport {
-  private legacyLogger: any;
-  private levelMapping: Record<LogLevel, string>;
-
-  constructor(legacyLogger: any) {
-    this.legacyLogger = legacyLogger;
-    this.levelMapping = {
-      [LogLevel.FATAL]: 'fatal',
-      [LogLevel.ERROR]: 'error',
-      [LogLevel.WARN]: 'warn',
-      [LogLevel.INFO]: 'info',
-      [LogLevel.DEBUG]: 'debug',
-      [LogLevel.TRACE]: 'trace'
-    };
-  }
-
-  async log(entry: LogEntry): Promise<void> {
-    const legacyLevel = this.levelMapping[entry.level];
-    const legacyMethod = this.legacyLogger[legacyLevel];
-    
-    if (typeof legacyMethod === 'function') {
-      legacyMethod.call(this.legacyLogger, entry.message, entry.data);
-    }
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    await this.ensureConnection();
+    await this.sendToConnection(entry, options);
   }
 
   async flush(): Promise<void> {
-    if (typeof this.legacyLogger.flush === 'function') {
-      await this.legacyLogger.flush();
+    // Clear any timers
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    // Flush and close connections
+    if (this.connection) {
+      await this.connection.flush();
+      await this.connection.close();
+      this.connection = null;
+    }
+  }
+
+  private async ensureConnection(): Promise<void> {
+    if (!this.connection) {
+      this.connection = await this.createConnection();
     }
   }
 }
-
-// Usage with Winston
-const winston = require('winston');
-const winstonLogger = winston.createLogger({
-  // ... winston config
-});
-
-logger.addTransport(new LegacyLoggerAdapter(winstonLogger));
 ```
 
----
-
-## Documentation and Testing
-
-### Self-Documenting Extensions
+### 5. Documentation and Types
 
 ```typescript
-interface ExtensionMetadata {
-  name: string;
-  version: string;
-  description: string;
-  author: string;
-  options?: Record<string, {
-    type: string;
-    description: string;
-    default?: any;
-    required?: boolean;
-  }>;
-}
+/**
+ * Custom transport for sending logs to external monitoring service.
+ * 
+ * Features:
+ * - Automatic retries with exponential backoff
+ * - Rate limiting to respect service limits
+ * - Batch processing for efficiency
+ * 
+ * @example
+ * ```typescript
+ * const transport = new MonitoringTransport({
+ *   apiKey: process.env.MONITORING_API_KEY,
+ *   endpoint: 'https://api.monitoring.com/logs',
+ *   batchSize: 50,
+ *   retries: 3
+ * });
+ * 
+ * logger.addTransport(transport);
+ * ```
+ */
+class MonitoringTransport implements Transport {
+  constructor(
+    private config: MonitoringConfig
+  ) {}
 
-abstract class DocumentedTransport implements Transport {
-  abstract readonly metadata: ExtensionMetadata;
-  
-  abstract log(entry: LogEntry, options?: TransportOptions): Promise<void>;
-  
-  flush?(options?: TransportOptions): Promise<void>;
-  
-  getDocumentation(): string {
-    const { name, version, description, author, options } = this.metadata;
-    
-    let doc = `# ${name} v${version}\n\n${description}\n\nAuthor: ${author}\n\n`;
-    
-    if (options) {
-      doc += '## Options\n\n';
-      for (const [key, opt] of Object.entries(options)) {
-        doc += `- **${key}** (${opt.type})${opt.required ? ' *required*' : ''}: ${opt.description}`;
-        if (opt.default !== undefined) {
-          doc += ` (default: ${JSON.stringify(opt.default)})`;
-        }
-        doc += '\n';
-      }
-    }
-    
-    return doc;
+  /**
+   * Sends log entry to monitoring service.
+   * Automatically batches entries and applies rate limiting.
+   */
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    // Implementation
+  }
+
+  /**
+   * Flushes all pending logs and closes connections.
+   * Should be called before application shutdown.
+   */
+  async flush(): Promise<void> {
+    // Implementation
   }
 }
 
-// Example implementation
-class MyCustomTransport extends DocumentedTransport {
-  readonly metadata: ExtensionMetadata = {
-    name: 'MyCustomTransport',
-    version: '1.0.0',
-    description: 'A custom transport for demonstration purposes',
-    author: 'Your Name <your.email@example.com>',
-    options: {
-      url: {
-        type: 'string',
-        description: 'The endpoint URL to send logs to',
-        required: true
-      },
-      timeout: {
-        type: 'number',
-        description: 'Request timeout in milliseconds',
-        default: 5000
-      }
-    }
-  };
-
-  async log(entry: LogEntry): Promise<void> {
-    // Implementation here
-  }
+interface MonitoringConfig {
+  /** API key for authentication */
+  apiKey: string;
+  /** Service endpoint URL */
+  endpoint: string;
+  /** Number of entries to batch together (default: 25) */
+  batchSize?: number;
+  /** Number of retry attempts (default: 3) */
+  retries?: number;
+  /** Request timeout in milliseconds (default: 5000) */
+  timeout?: number;
 }
 ```
 
 ---
 
-## More Resources
+## Next Steps
 
-- [Usage Guide](./usage.md) - Complete usage documentation
-- [Transports](./transports.md) - Built-in transport details
-- [Formatters](./formatters.md) - Formatting system guide
+- [Usage Guide](./usage.md) - Learn basic usage patterns
 - [API Reference](./api.md) - Complete API documentation
-- [Examples](./examples.md) - Real-world usage examples
-
----
+- [Transports Guide](./transports.md) - Built-in transport documentation
+- [Migration Guide](./migration.md) - Upgrading from other loggers

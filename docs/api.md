@@ -1,19 +1,19 @@
 # JellyLogger API Reference
 
-Complete API documentation for JellyLogger classes, interfaces, types, and functions.
+Complete API documentation for JellyLogger.
 
 ---
 
 ## Table of Contents
 
-- [Core Logger](#core-logger)
-- [Log Levels](#log-levels)
-- [Transports](#transports)
-- [Formatters](#formatters)
-- [Redaction](#redaction)
-- [Type Definitions](#type-definitions)
-- [Utility Functions](#utility-functions)
-- [Preset Helpers](#preset-helpers)
+1. [Core Logger](#core-logger)
+2. [Log Levels](#log-levels)
+3. [Interfaces](#interfaces)
+4. [Transports](#transports)
+5. [Formatters](#formatters)
+6. [Redaction](#redaction)
+7. [Utility Functions](#utility-functions)
+8. [Types](#types)
 
 ---
 
@@ -21,7 +21,7 @@ Complete API documentation for JellyLogger classes, interfaces, types, and funct
 
 ### logger
 
-The main singleton logger instance.
+The main logger instance that serves as the entry point for JellyLogger.
 
 ```typescript
 import { logger } from "jellylogger";
@@ -32,64 +32,70 @@ import { logger } from "jellylogger";
 ##### Logging Methods
 
 ```typescript
-logger.fatal(message: string, ...args: unknown[]): void
-logger.error(message: string, ...args: unknown[]): void
-logger.warn(message: string, ...args: unknown[]): void
-logger.info(message: string, ...args: unknown[]): void
-logger.debug(message: string, ...args: unknown[]): void
 logger.trace(message: string, ...args: unknown[]): void
 ```
 
-**Parameters:**
-- `message` - The log message
-- `...args` - Additional arguments (objects, errors, primitives)
+Logs a TRACE level message (level 6). Most granular logging level.
 
-**Example:**
 ```typescript
-logger.info("User action", { userId: 123 }, "Additional context");
-logger.error("Database error", error, { query: "SELECT * FROM users" });
+logger.debug(message: string, ...args: unknown[]): void
+```
+
+Logs a DEBUG level message (level 5). For debugging information.
+
+```typescript
+logger.info(message: string, ...args: unknown[]): void
+```
+
+Logs an INFO level message (level 4). General information messages.
+
+```typescript
+logger.warn(message: string, ...args: unknown[]): void
+```
+
+Logs a WARN level message (level 3). Warning messages for potential issues.
+
+```typescript
+logger.error(message: string, ...args: unknown[]): void
+```
+
+Logs an ERROR level message (level 2). Error messages that don't stop the application.
+
+```typescript
+logger.fatal(message: string, ...args: unknown[]): void
+```
+
+Logs a FATAL level message (level 1). Critical errors that may cause application termination.
+
+**Examples:**
+```typescript
+logger.info("User logged in", { userId: "123", ip: "192.168.1.1" });
+logger.error("Database connection failed", error);
+logger.debug("Processing step completed", { step: 5, duration: "120ms" });
 ```
 
 ##### Configuration Methods
 
 ```typescript
-logger.setOptions(newOptions: LoggerOptions): void
+logger.setOptions(options: Partial<LoggerOptions>): void
 ```
 
-Sets logger configuration options. Options are merged with existing configuration.
+Updates the logger configuration. Options are merged with existing configuration.
 
-**Parameters:**
-- `newOptions` - Configuration object
+```typescript
+logger.resetOptions(): void
+```
+
+Resets the logger configuration to default values.
 
 **Example:**
 ```typescript
 logger.setOptions({
   level: LogLevel.DEBUG,
   useHumanReadableTime: true,
-  format: "json"
-});
-```
-
-```typescript
-logger.resetOptions(): void
-```
-
-Resets logger to default configuration.
-
-```typescript
-logger.child(childOptions?: ChildLoggerOptions): ChildLogger
-```
-
-Creates a child logger with inherited configuration.
-
-**Parameters:**
-- `childOptions` - Child-specific configuration
-
-**Example:**
-```typescript
-const requestLogger = logger.child({
-  messagePrefix: "[REQ-123]",
-  context: { requestId: "abc123" }
+  redaction: {
+    keys: ["password", "token"]
+  }
 });
 ```
 
@@ -134,13 +140,23 @@ logger.addTransport(fileTransport);
 await logger.flushAll();
 ```
 
-#### Properties
+##### Child Logger Creation
 
 ```typescript
-logger.options: LoggerOptions
+logger.child(options?: ChildLoggerOptions): ChildLogger
 ```
 
-Current logger configuration (read-only).
+Creates a child logger that inherits the parent's configuration but can have its own context.
+
+**Example:**
+```typescript
+const userLogger = logger.child({
+  messagePrefix: "USER",
+  context: { userId: "123" }
+});
+
+userLogger.info("Profile updated"); // [USER] Profile updated
+```
 
 ---
 
@@ -151,12 +167,12 @@ Current logger configuration (read-only).
 ```typescript
 enum LogLevel {
   SILENT = 0,  // No logs
-  FATAL = 1,   // Critical errors causing application termination
-  ERROR = 2,   // Errors that don't necessarily stop the application
-  WARN = 3,    // Warnings about potential issues
-  INFO = 4,    // General informational messages
-  DEBUG = 5,   // Detailed information for debugging
-  TRACE = 6,   // Most granular information, for tracing code execution
+  FATAL = 1,   // Critical errors
+  ERROR = 2,   // Errors
+  WARN = 3,    // Warnings  
+  INFO = 4,    // Information (default)
+  DEBUG = 5,   // Debug info
+  TRACE = 6    // Detailed tracing
 }
 ```
 
@@ -169,129 +185,76 @@ logger.setOptions({ level: LogLevel.DEBUG });
 
 ---
 
+## Interfaces
+
+### LoggerOptions
+
+Configuration interface for the main logger.
+
+```typescript
+interface LoggerOptions {
+  level?: LogLevel;                      // Minimum log level (default: INFO)
+  useHumanReadableTime?: boolean;        // Human-readable timestamps (default: true)
+  transports?: Transport[];              // Array of transports (default: [ConsoleTransport])
+  format?: 'string' | 'json';           // Legacy format option
+  formatter?: (entry: LogEntry) => string; // Legacy custom formatter
+  customConsoleColors?: CustomConsoleColors; // Custom console colors
+  redaction?: RedactionConfig;           // Redaction configuration
+  pluggableFormatter?: LogFormatter;     // Pluggable formatter instance
+  [key: string]: unknown;               // Allow additional properties
+}
+```
+
+### ChildLoggerOptions
+
+Configuration for child loggers.
+
+```typescript
+interface ChildLoggerOptions {
+  messagePrefix?: string;                // Prefix for all messages
+  defaultData?: Record<string, unknown>; // Default data context
+  context?: Record<string, unknown>;     // Alias for defaultData
+}
+```
+
+### LogEntry
+
+Represents a single log entry.
+
+```typescript
+interface LogEntry {
+  timestamp: string;                     // ISO timestamp
+  level: LogLevel;                       // Numeric log level
+  levelName: string;                     // String log level name
+  message: string;                       // Primary message
+  args: {                                // Processed arguments
+    processedArgs: unknown[];
+    hasComplexArgs: boolean;
+  };
+  data?: Record<string, unknown>;        // Structured data
+}
+```
+
+### BaseLogger
+
+Base interface for logger functionality.
+
+```typescript
+interface BaseLogger {
+  fatal(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  info(message: string, ...args: unknown[]): void;
+  debug(message: string, ...args: unknown[]): void;
+  trace(message: string, ...args: unknown[]): void;
+  child(childOptions?: ChildLoggerOptions): ChildLogger;
+  flushAll(): Promise<void>;
+}
+```
+
+---
+
 ## Transports
-
-### ConsoleTransport
-
-Writes logs to the console with colorized output.
-
-```typescript
-new ConsoleTransport()
-```
-
-**Example:**
-```typescript
-import { ConsoleTransport } from "jellylogger";
-
-const consoleTransport = new ConsoleTransport();
-logger.addTransport(consoleTransport);
-```
-
-### FileTransport
-
-Writes logs to files with optional rotation.
-
-```typescript
-new FileTransport(filePath: string, rotationConfig?: LogRotationConfig)
-```
-
-**Parameters:**
-- `filePath` - Path to the log file
-- `rotationConfig` - Optional rotation configuration
-
-**Example:**
-```typescript
-import { FileTransport } from "jellylogger";
-
-const fileTransport = new FileTransport("./logs/app.log", {
-  maxFileSize: 10 * 1024 * 1024,  // 10MB
-  maxFiles: 5,
-  compress: true,
-  dateRotation: true
-});
-```
-
-#### LogRotationConfig
-
-```typescript
-interface LogRotationConfig {
-  maxFileSize?: number;     // Maximum file size in bytes before rotation (default: 10MB)
-  maxFiles?: number;        // Maximum number of rotated files to keep (default: 5)
-  compress?: boolean;       // Whether to compress rotated files with gzip (default: true)
-  dateRotation?: boolean;   // Whether to rotate based on date (daily) (default: false)
-}
-```
-
-### DiscordWebhookTransport
-
-Sends logs to Discord via webhook with batching to avoid rate limits.
-
-```typescript
-new DiscordWebhookTransport(webhookUrl: string, options?: DiscordWebhookTransportOptions)
-```
-
-**Parameters:**
-- `webhookUrl` - Discord webhook URL
-- `options` - Optional configuration
-
-**Example:**
-```typescript
-import { DiscordWebhookTransport } from "jellylogger";
-
-const discordTransport = new DiscordWebhookTransport(
-  "https://discord.com/api/webhooks/...",
-  {
-    batchIntervalMs: 2000,
-    maxBatchSize: 10,
-    username: "MyApp Logger"
-  }
-);
-```
-
-#### DiscordWebhookTransportOptions
-
-```typescript
-interface DiscordWebhookTransportOptions {
-  batchIntervalMs?: number;        // How often to send batches (ms) (default: 2000)
-  maxBatchSize?: number;           // Max entries per batch (default: 10)
-  username?: string;               // Username for Discord webhook (default: 'JellyLogger')
-  maxRetries?: number;             // Maximum retry attempts (default: 3)
-  suppressConsoleErrors?: boolean; // Suppress console.error on failure (default: false)
-}
-```
-
-### WebSocketTransport
-
-Streams logs to a WebSocket server in real-time.
-
-```typescript
-new WebSocketTransport(url: string, options?: WebSocketTransportOptions)
-```
-
-**Parameters:**
-- `url` - WebSocket server URL
-- `options` - Optional configuration
-
-**Example:**
-```typescript
-import { WebSocketTransport } from "jellylogger";
-
-const wsTransport = new WebSocketTransport("ws://localhost:8080/logs", {
-  reconnectIntervalMs: 1000,
-  maxReconnectIntervalMs: 30000
-});
-```
-
-#### WebSocketTransportOptions
-
-```typescript
-interface WebSocketTransportOptions {
-  reconnectIntervalMs?: number;    // Reconnect interval in ms (initial) (default: 1000)
-  maxReconnectIntervalMs?: number; // Maximum reconnect interval in ms (default: 30000)
-  redact?: boolean;                // Whether to redact logs for this transport (default: true)
-  serializer?: (entry: LogEntry) => string; // Custom serialization function
-}
-```
 
 ### Transport Interface
 
@@ -304,37 +267,134 @@ interface Transport {
 }
 ```
 
+### TransportOptions
+
+Options passed to transport methods:
+
+```typescript
+interface TransportOptions {
+  format?: 'string' | 'json';           // Output format
+  formatter?: (entry: LogEntry) => string; // Custom formatter
+  pluggableFormatter?: LogFormatter;     // Pluggable formatter
+  [key: string]: unknown;               // Additional options
+}
+```
+
+### Built-in Transports
+
+#### ConsoleTransport
+
+Outputs logs to the console with color support.
+
+```typescript
+import { ConsoleTransport } from "jellylogger";
+
+const transport = new ConsoleTransport();
+logger.addTransport(transport);
+```
+
+#### FileTransport
+
+Writes logs to files with rotation support.
+
+```typescript
+import { FileTransport } from "jellylogger";
+
+const transport = new FileTransport(filePath: string, config?: LogRotationConfig);
+logger.addTransport(transport);
+```
+
+#### DiscordWebhookTransport
+
+Sends logs to Discord via webhooks.
+
+```typescript
+import { DiscordWebhookTransport } from "jellylogger";
+
+const transport = new DiscordWebhookTransport(webhookUrl: string);
+logger.addTransport(transport);
+```
+
+#### WebSocketTransport
+
+Streams logs over WebSocket connections.
+
+```typescript
+import { WebSocketTransport } from "jellylogger";
+
+const transport = new WebSocketTransport(url: string);
+logger.addTransport(transport);
+```
+
+### LogRotationConfig
+
+Configuration for file rotation:
+
+```typescript
+interface LogRotationConfig {
+  maxFileSize?: number;    // Max size in bytes before rotation (default: 10MB)
+  maxFiles?: number;       // Number of rotated files to keep (default: 5)
+  compress?: boolean;      // Compress rotated files with gzip (default: true)
+  dateRotation?: boolean;  // Enable daily rotation (default: false)
+}
+```
+
 ---
 
 ## Formatters
 
 ### LogFormatter Interface
 
+Interface for creating custom formatters:
+
 ```typescript
 interface LogFormatter {
-  format(entry: LogEntry): string;
+  format(entry: LogEntry, options?: {
+    consoleColors?: CustomConsoleColors;
+    useColors?: boolean;
+  }): string;
 }
 ```
 
 ### Built-in Formatters
 
-#### LogfmtFormatter
+#### createFormatter Function
 
-Formats logs in logfmt style.
+Factory function for built-in formatters:
 
 ```typescript
-import { LogfmtFormatter } from "jellylogger";
+function createFormatter(name: BuiltInFormatterName): LogFormatter
+```
+
+**Available formatters:**
+- `"default"` - Human-readable format
+- `"ndjson"` - Newline-delimited JSON
+- `"logfmt"` - Key=value pairs format
+
+**Example:**
+```typescript
+import { createFormatter } from "jellylogger";
 
 logger.setOptions({
-  pluggableFormatter: new LogfmtFormatter()
+  pluggableFormatter: createFormatter("ndjson")
 });
+```
 
-// Output: ts=2024-01-15T10:30:45.123Z level=info msg="User login" userId=123
+#### DefaultFormatter
+
+The standard human-readable formatter:
+
+```typescript
+import { DefaultFormatter } from "jellylogger";
+
+logger.setOptions({
+  pluggableFormatter: new DefaultFormatter()
+});
 ```
 
 #### NdjsonFormatter
 
-Formats logs as newline-delimited JSON.
+JSON formatter with one object per line:
 
 ```typescript
 import { NdjsonFormatter } from "jellylogger";
@@ -342,29 +402,17 @@ import { NdjsonFormatter } from "jellylogger";
 logger.setOptions({
   pluggableFormatter: new NdjsonFormatter()
 });
-
-// Output: {"timestamp":"2024-01-15T10:30:45.123Z","level":"info","message":"User login","userId":123}
 ```
 
-### Custom Formatters
+#### LogfmtFormatter
+
+Key=value pairs formatter:
 
 ```typescript
-// Function formatter
-logger.setOptions({
-  formatter: (entry: LogEntry) => {
-    return `[${entry.timestamp}] ${entry.levelName}: ${entry.message}`;
-  }
-});
-
-// Pluggable formatter class
-class CustomFormatter implements LogFormatter {
-  format(entry: LogEntry): string {
-    return `CUSTOM: ${entry.message}`;
-  }
-}
+import { LogfmtFormatter } from "jellylogger";
 
 logger.setOptions({
-  pluggableFormatter: new CustomFormatter()
+  pluggableFormatter: new LogfmtFormatter()
 });
 ```
 
@@ -396,40 +444,47 @@ interface RedactionConfig {
 }
 ```
 
-### FieldRedactionConfig Interface
+### FieldRedactionConfig
+
+Per-field redaction configuration:
 
 ```typescript
 interface FieldRedactionConfig {
-  replacement?: string | ReplacementFunction;  // Field-specific replacement
-  customRedactor?: CustomRedactor;             // Field-specific custom redactor
-  disabled?: boolean;                          // Disable redaction for this field
+  replacement?: string | ReplacementFunction; // Field-specific replacement
+  customRedactor?: CustomRedactor;           // Field-specific redactor
+  disabled?: boolean;                        // Disable redaction for this field
 }
 ```
 
-### Type Definitions
+### Custom Functions
+
+#### CustomRedactor
 
 ```typescript
-type CustomRedactor = (value: unknown, context: RedactionContext) => unknown;
+type CustomRedactor = (
+  value: unknown, 
+  context: RedactionContext
+) => unknown;
+```
 
-type ReplacementFunction = (value: any, context: RedactionContext) => string;
+#### ReplacementFunction
 
-type AuditHook = (event: RedactionAuditEvent) => void;
+```typescript
+type ReplacementFunction = (
+  value: unknown, 
+  context: RedactionContext
+) => string;
+```
 
+#### RedactionContext
+
+```typescript
 interface RedactionContext {
-  key: string;           // The key being processed
-  path: string;          // Full path to the current location
-  field: string;         // The field in the log entry being processed
-  originalValue: unknown; // The original value before redaction
-  target?: 'console' | 'file'; // Target where redaction will be applied
-}
-
-interface RedactionAuditEvent {
-  type: 'key' | 'value' | 'string' | 'custom' | 'field';
-  context: RedactionContext;
-  before: unknown;
-  after: unknown;
-  timestamp: Date;
-  rule?: string;
+  key: string;                    // Current key
+  path: string;                   // Full path (e.g., "user.profile.email")
+  field: string;                  // Log entry field (e.g., "data", "args")
+  originalValue: unknown;         // Original value before redaction
+  target?: 'console' | 'file';   // Target transport type
 }
 ```
 
@@ -463,50 +518,71 @@ logger.setOptions({
 
 ---
 
-## Type Definitions
+## Utility Functions
 
-### LogEntry Interface
-
-```typescript
-interface LogEntry {
-  timestamp: string;               // ISO timestamp or human-readable
-  level: LogLevel;                // Numeric log level
-  levelName: string;              // String representation of level
-  message: string;                // Log message
-  args: unknown[];                // Additional arguments
-  data?: Record<string, unknown>; // Structured data
-}
-```
-
-### LoggerOptions Interface
+### Redaction Functions
 
 ```typescript
-interface LoggerOptions {
-  level?: LogLevel;                        // Minimum log level (default: LogLevel.INFO)
-  useHumanReadableTime?: boolean;          // Human-readable timestamps (default: false)
-  transports?: Transport[];                // Array of transports (default: [new ConsoleTransport()])
-  format?: 'string' | 'json';             // Output format (default: 'string')
-  formatter?: (entry: LogEntry) => string; // Custom formatter function
-  customConsoleColors?: CustomConsoleColors; // Custom console colors
-  redaction?: RedactionConfig;             // Redaction configuration
-  pluggableFormatter?: LogFormatter;       // Pluggable formatter instance
-  discordWebhookUrl?: string;             // Discord webhook URL for discord: true flag
-  context?: Record<string, unknown>;       // Logger context
-  [key: string]: unknown;                 // Additional properties
-}
+function getRedactedEntry(
+  entry: LogEntry, 
+  config?: RedactionConfig, 
+  target?: 'console' | 'file'
+): LogEntry
 ```
 
-### ChildLoggerOptions Interface
+Applies redaction to a log entry.
 
 ```typescript
-interface ChildLoggerOptions {
-  messagePrefix?: string;                  // Prefix for all messages
-  defaultData?: Record<string, unknown>;   // Default structured data
-  context?: Record<string, unknown>;       // Context data (alias for defaultData)
-}
+function shouldRedactKey(path: string, key: string, config: RedactionConfig): boolean
 ```
 
-### CustomConsoleColors Type
+Checks if a key should be redacted.
+
+```typescript
+function shouldRedactValue(value: unknown, config: RedactionConfig): boolean
+```
+
+Checks if a value should be redacted based on patterns.
+
+### Serialization Functions
+
+```typescript
+function getTimestamp(useHumanReadable?: boolean): string
+```
+
+Generates timestamps for log entries.
+
+```typescript
+function processLogArgs(args: unknown[]): { processedArgs: unknown[]; hasComplexArgs: boolean }
+```
+
+Processes log arguments for structured logging.
+
+```typescript
+function serializeError(error: Error): Record<string, unknown>
+```
+
+Safely serializes Error objects.
+
+### Type Guards
+
+```typescript
+function isRecord(value: unknown): value is Record<string, unknown>
+```
+
+Type guard for plain objects.
+
+```typescript
+function isErrorLike(value: unknown): value is Error
+```
+
+Type guard for Error-like objects.
+
+---
+
+## Types
+
+### CustomConsoleColors
 
 ```typescript
 type CustomConsoleColors = Partial<{
@@ -519,348 +595,52 @@ type CustomConsoleColors = Partial<{
   [LogLevel.INFO]: string;
   [LogLevel.DEBUG]: string;
   [LogLevel.TRACE]: string;
-}>;
+}> & {
+  [key: string]: string | undefined;
+};
 ```
 
-### TransportOptions Interface
+### Built-in Formatter Names
 
 ```typescript
-interface TransportOptions {
-  format?: 'string' | 'json';             // Output format for this transport
-  formatter?: (entry: LogEntry) => string; // Custom formatter for this transport
-  pluggableFormatter?: LogFormatter;       // Pluggable formatter for this transport
-  [key: string]: unknown;                 // Additional transport-specific options
-}
-```
-
----
-
-## Utility Functions
-
-### Type Guards
-
-```typescript
-function isRecord(value: unknown): value is Record<string, unknown>
-```
-
-Checks if a value is a plain object record.
-
-```typescript
-function isErrorLike(value: unknown): value is { name: string; message: string; stack?: string; cause?: unknown }
-```
-
-Checks if a value looks like an Error object.
-
-```typescript
-function isSerializable(value: unknown): boolean
-```
-
-Checks if a value can be safely JSON.stringify'd.
-
-```typescript
-function isPrimitive(value: unknown): value is string | number | boolean | null | undefined
-```
-
-Checks if a value is a primitive type.
-
-### Serialization
-
-```typescript
-function getTimestamp(humanReadable?: boolean): string
-```
-
-Generates timestamp string (ISO or human-readable).
-
-```typescript
-function serializeError(error: Error, maxDepth?: number): Record<string, unknown>
-```
-
-Serializes error objects with optional depth limiting.
-
-```typescript
-function processLogArgs(args: unknown[]): unknown[]
-```
-
-Safely processes log arguments for serialization.
-
-### Colors
-
-```typescript
-function toAnsiColor(color?: string, fallback?: string): string
-```
-
-Converts color input to ANSI escape code using Bun.color.
-
-### Redaction Functions
-
-```typescript
-function shouldRedactKey(keyPath: string, key: string, config: RedactionConfig): boolean
-```
-
-Checks if a key should be redacted based on configuration.
-
-```typescript
-function shouldRedactValue(value: any, config: RedactionConfig): boolean
-```
-
-Checks if a value should be redacted based on patterns.
-
-```typescript
-function redactString(str: string, config: RedactionConfig, context?: RedactionContext): string
-```
-
-Redacts sensitive patterns in strings.
-
-```typescript
-function redactObject(obj: unknown, config: RedactionConfig, context?: Partial<RedactionContext>): unknown
-```
-
-Recursively redacts objects based on configuration.
-
-```typescript
-function getRedactedEntry(entry: LogEntry, redactionConfig?: RedactionConfig, target?: 'console' | 'file'): LogEntry
-```
-
-Returns a redacted copy of a log entry.
-
-```typescript
-function needsRedaction(obj: unknown, config: RedactionConfig, path?: string): boolean
-```
-
-Checks if an object needs redaction to avoid unnecessary cloning.
-
----
-
-## Preset Helpers
-
-Quick setup functions for common transport configurations:
-
-```typescript
-function useConsoleAndFile(filePath: string, rotationConfig?: LogRotationConfig): void
-```
-
-Configures logger with console and file transports.
-
-```typescript
-function useConsoleFileAndDiscord(
-  filePath: string,
-  discordWebhookUrl: string,
-  rotationConfig?: LogRotationConfig
-): void
-```
-
-Configures logger with console, file, and Discord transports.
-
-```typescript
-function useConsoleAndWebSocket(websocketUrl: string): void
-```
-
-Configures logger with console and WebSocket transports.
-
-```typescript
-function useAllTransports(
-  filePath: string,
-  discordWebhookUrl: string,
-  websocketUrl: string,
-  rotationConfig?: LogRotationConfig
-): void
-```
-
-Configures logger with all available transports.
-
-```typescript
-function addFileLogging(filePath: string, rotationConfig?: LogRotationConfig): void
-```
-
-Adds file logging to current configuration.
-
-```typescript
-function addDiscordLogging(discordWebhookUrl: string): void
-```
-
-Adds Discord webhook logging to current configuration.
-
-```typescript
-function addWebSocketLogging(websocketUrl: string): void
-```
-
-Adds WebSocket logging to current configuration.
-
-**Example:**
-```typescript
-import { useConsoleAndFile, addDiscordLogging } from "jellylogger";
-
-// Quick setup
-useConsoleAndFile("./logs/app.log");
-
-// Add Discord later
-addDiscordLogging("https://discord.com/api/webhooks/...");
-```
-
----
-
-## Advanced Usage Examples
-
-### Custom Transport
-
-```typescript
-import type { Transport, LogEntry, TransportOptions } from "jellylogger";
-
-class DatabaseTransport implements Transport {
-  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
-    // Implementation
-  }
-
-  async flush(): Promise<void> {
-    // Implementation
-  }
-}
-
-logger.addTransport(new DatabaseTransport());
-```
-
-### Complex Redaction
-
-```typescript
-logger.setOptions({
-  redaction: {
-    keys: ["*.password", "auth.*", "credentials.*"],
-    valuePatterns: [/\b\d{4}-\d{4}-\d{4}-\d{4}\b/], // Credit cards
-    stringPatterns: [/Bearer\s+[\w-]+/gi],
-    whitelist: ["auth.method", "user.id"],
-    fieldConfigs: {
-      "user.email": {
-        replacement: (value, context) => {
-          const email = String(value);
-          const [, domain] = email.split('@');
-          return `***@${domain}`;
-        }
-      },
-      "debug.*": { disabled: true }
-    },
-    customRedactor: (value, context) => {
-      if (context.target === 'file' && context.path.includes('internal')) {
-        return '[FILE_REDACTED]';
-      }
-      return value;
-    }
-  }
-});
-```
-
-### Production Logger Setup
-
-```typescript
-import { 
-  logger, 
-  LogLevel, 
-  FileTransport, 
-  DiscordWebhookTransport 
-} from "jellylogger";
-
-// Production configuration
-logger.setOptions({
-  level: LogLevel.INFO,
-  useHumanReadableTime: false,
-  format: "json",
-  transports: [
-    new FileTransport("./logs/app.log", {
-      maxFileSize: 100 * 1024 * 1024, // 100MB
-      maxFiles: 10,
-      compress: true,
-      dateRotation: true
-    }),
-    new DiscordWebhookTransport(process.env.DISCORD_WEBHOOK_URL!, {
-      batchIntervalMs: 5000,
-      maxBatchSize: 5,
-      suppressConsoleErrors: true
-    })
-  ],
-  redaction: {
-    keys: [
-      "password", "token", "secret", "apiKey", "authorization",
-      "*.password", "*.token", "*.secret", "auth.*", "credentials.*"
-    ],
-    stringPatterns: [
-      /Bearer\s+[\w-]+/gi,
-      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
-      /\b\d{4}-\d{4}-\d{4}-\d{4}\b/g
-    ],
-    redactStrings: true,
-    replacement: "[REDACTED]"
-  }
-});
-
-// Error handling
-process.on('uncaughtException', async (error) => {
-  logger.fatal("Uncaught exception", error, { discord: true });
-  await logger.flushAll();
-  process.exit(1);
-});
+type BuiltInFormatterName = 'default' | 'logfmt' | 'ndjson';
 ```
 
 ---
 
 ## Error Handling
 
-All transport operations are designed to be non-blocking and include comprehensive error handling:
+JellyLogger is designed to be fault-tolerant:
 
-- **Console Transport**: Errors are logged to stderr
-- **File Transport**: Falls back gracefully on write failures
-- **Discord Transport**: Includes retry logic and rate limiting
-- **WebSocket Transport**: Automatic reconnection with exponential backoff
+- **Transport Errors**: If a transport fails, other transports continue working
+- **Formatter Errors**: Falls back to default formatting if custom formatters fail
+- **Redaction Errors**: Continues with original values if redaction fails
+- **Async Errors**: Caught and logged without crashing the application
 
-Example error handling:
+### Example Error Handling
 
 ```typescript
-// Logger never throws - errors are handled gracefully
-logger.info("This will not crash", { problematic: circularReference });
+// This won't crash your application
+logger.addTransport(new FileTransport("/invalid/path"));
+logger.info("This message will still appear in console");
 
-// Use flushAll() before exit to ensure all logs are written
-process.on('SIGTERM', async () => {
-  logger.info("Received SIGTERM, shutting down gracefully");
-  await logger.flushAll();
-  process.exit(0);
-});
+// Async transport errors are caught
+logger.addTransport(new WebSocketTransport("ws://invalid-url"));
+logger.info("This continues to work");
 ```
 
 ---
 
-## TypeScript Integration
+## Performance Considerations
 
-JellyLogger is fully typed and provides excellent TypeScript support:
-
-```typescript
-import type { 
-  LogLevel, 
-  LogEntry, 
-  LoggerOptions, 
-  Transport,
-  RedactionConfig,
-  ChildLoggerOptions 
-} from "jellylogger";
-
-// All types are exported for custom implementations
-class MyTransport implements Transport {
-  async log(entry: LogEntry): Promise<void> {
-    // Full type safety
-  }
-}
-
-const config: LoggerOptions = {
-  level: LogLevel.DEBUG,
-  // Autocomplete available for all options
-};
-```
+- **Synchronous File Operations**: FileTransport uses sync writes for reliability
+- **Background Rotation**: File rotation happens asynchronously
+- **Transport Parallelism**: All transports receive logs in parallel
+- **Memory Management**: Circular reference detection prevents memory leaks
+- **Lazy Evaluation**: Log processing only occurs if the log level is enabled
 
 ---
 
-## More Resources
+## Version Compatibility
 
-- [Usage Guide](./usage.md) - Complete usage documentation  
-- [Transports](./transports.md) - Transport configuration details
-- [Formatters](./formatters.md) - Formatting system guide
-- [Extending](./extending.md) - Creating custom extensions
-- [Examples](./examples.md) - Real-world usage examples
-
----
+This API documentation is for JellyLogger v2.2.1+. For migration information from earlier versions, see the [Migration Guide](./migration.md).

@@ -4,51 +4,79 @@ Transports in JellyLogger determine where your logs are sent. Each transport han
 
 ---
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [ConsoleTransport](#consoletransport)
+3. [FileTransport](#filetransport)
+4. [DiscordWebhookTransport](#discordwebhooktransport)
+5. [WebSocketTransport](#websockettransport)
+6. [Transport Management](#transport-management)
+7. [Multiple Transport Strategies](#multiple-transport-strategies)
+8. [Custom Transport Development](#custom-transport-development)
+9. [Performance Considerations](#performance-considerations)
+10. [Best Practices](#best-practices)
+11. [Troubleshooting](#troubleshooting)
+
+---
+
 ## Overview
 
-JellyLogger supports multiple transport types:
+JellyLogger uses a transport system where each transport is responsible for sending logs to a specific destination. Transports implement the `Transport` interface and handle:
 
-- **ConsoleTransport** - Outputs to console with colors
-- **FileTransport** - Writes to files with rotation support
-- **DiscordWebhookTransport** - Sends logs to Discord channels
-- **WebSocketTransport** - Streams logs to WebSocket servers
+- **Log Formatting**: Converting log entries to the appropriate format
+- **Redaction**: Applying data protection rules per destination
+- **Error Handling**: Graceful degradation when issues occur
+- **Flushing**: Ensuring data is written before shutdown
 
-All transports implement the `Transport` interface and can be mixed and matched as needed.
+### Transport Interface
+
+```typescript
+interface Transport {
+  log(entry: LogEntry, options?: TransportOptions): Promise<void>;
+  flush?(options?: TransportOptions): Promise<void>;
+}
+```
 
 ---
 
 ## ConsoleTransport
 
-The default transport that outputs colorized logs to the console using appropriate console methods (`console.info`, `console.error`, etc.).
+The default transport that outputs logs to the console with automatic color coding.
 
 ### Basic Usage
 
 ```typescript
 import { logger, ConsoleTransport } from "jellylogger";
 
+// ConsoleTransport is included by default
+logger.info("Hello, console!");
+
+// Or add explicitly
 logger.addTransport(new ConsoleTransport());
 ```
 
 ### Features
 
-- **Automatic Color Mapping**: Uses different colors for each log level
-- **Smart Console Methods**: Routes to appropriate console methods (error, warn, info, debug)
-- **Bun Color Support**: Leverages `Bun.color()` for advanced color parsing
-- **Circular Reference Handling**: Safely handles complex objects
+- **Automatic Color Coding**: Different colors for each log level
+- **Human-Readable Format**: Optimized for development readability
+- **Error Handling**: Graceful fallback if console is unavailable
+- **No Configuration Required**: Works out of the box
 
-### Custom Colors
+### Color Customization
 
 ```typescript
 import { logger, LogLevel } from "jellylogger";
 
 logger.setOptions({
   customConsoleColors: {
-    [LogLevel.ERROR]: "#FF0000",      // Hex colors
-    [LogLevel.WARN]: "rgb(255,165,0)", // RGB colors
-    [LogLevel.INFO]: "hsl(120,100%,50%)", // HSL colors
-    [LogLevel.DEBUG]: "\x1b[34m",     // ANSI escape codes
-    bold: "#FFFFFF",
-    reset: "\x1b[0m"
+    [LogLevel.INFO]: "#00ff00",    // Green
+    [LogLevel.WARN]: "#ffff00",    // Yellow  
+    [LogLevel.ERROR]: "#ff0000",   // Red
+    [LogLevel.DEBUG]: "#00ffff",   // Cyan
+    reset: "\x1b[0m",
+    bold: "\x1b[1m",
+    dim: "\x1b[2m"
   }
 });
 ```
@@ -56,21 +84,20 @@ logger.setOptions({
 ### Console Output Examples
 
 ```typescript
-// String format (default)
-logger.info("User logged in", { userId: 123 });
-// Output: [2024-01-15T10:30:45.123Z] INFO : User logged in {"userId":123}
-
-// JSON format
-logger.setOptions({ format: "json" });
-logger.info("User logged in", { userId: 123 });
-// Output: {"timestamp":"2024-01-15T10:30:45.123Z","level":4,"levelName":"INFO","message":"User logged in","data":{"userId":123},"args":[]}
+// Different log levels with default colors
+logger.trace("Detailed tracing info");    // Dim gray
+logger.debug("Debug information");        // Cyan
+logger.info("General information");       // Blue
+logger.warn("Warning message");           // Yellow
+logger.error("Error occurred");           // Red
+logger.fatal("Critical system error");    // Bright red
 ```
 
 ---
 
 ## FileTransport
 
-Writes logs to files with support for rotation, compression, and directory creation.
+Writes logs to files with comprehensive rotation and compression support.
 
 ### Basic Usage
 
@@ -104,161 +131,132 @@ logger.addTransport(transport);
 | `compress` | boolean | true | Whether to gzip rotated files |
 | `dateRotation` | boolean | false | Whether to rotate daily |
 
-### File Rotation Examples
+### File Structure Examples
 
-```typescript
-// Size-based rotation
-const sizeRotation = new FileTransport("./logs/app.log", {
-  maxFileSize: 100 * 1024 * 1024, // 100MB
-  maxFiles: 5,
-  compress: true
-});
-
-// Date-based rotation
-const dateRotation = new FileTransport("./logs/app.log", {
-  dateRotation: true,
-  maxFiles: 30, // Keep 30 days
-  compress: true
-});
-
-// Both size and date rotation
-const hybridRotation = new FileTransport("./logs/app.log", {
-  maxFileSize: 50 * 1024 * 1024,
-  maxFiles: 7,
-  dateRotation: true,
-  compress: true
-});
-```
-
-### File Structure
-
+With rotation enabled, your log directory will look like:
 ```
 logs/
 ├── app.log              # Current log file
-├── app.1.log.gz         # Yesterday's compressed logs
+├── app.1.log.gz         # Yesterday's logs (compressed)
 ├── app.2.log.gz         # Day before yesterday
-├── app.3.log.gz
-├── app.4.log.gz
-└── app.5.log.gz         # Oldest kept file
+└── app.3.log.gz         # Older logs
 ```
 
-### Bun-Specific Optimizations
-
-- Uses `Bun.write()` for optimal file I/O performance
-- Leverages Bun's built-in gzip compression
-- Synchronous writes ensure proper log ordering
-
-### Error Handling
+### Advanced File Configuration
 
 ```typescript
-// FileTransport handles common errors gracefully:
-// - Missing directories (creates them automatically)
-// - Permission issues (logs warnings, continues operation)
-// - Disk space issues (fails gracefully)
-// - Rotation failures (continues with current file)
+// Production file logging with comprehensive rotation
+const productionFileTransport = new FileTransport("./logs/production.log", {
+  maxFileSize: 100 * 1024 * 1024,    // 100MB files
+  maxFiles: 30,                      // Keep 30 files (30 days if daily rotation)
+  compress: true,                    // Compress old files to save space
+  dateRotation: true                 // Rotate daily regardless of size
+});
 
-const transport = new FileTransport("./logs/app.log");
-// Will create ./logs/ directory if it doesn't exist
+// Error-only file logging
+const errorFileTransport = new FileTransport("./logs/errors.log");
+
+logger.addTransport(productionFileTransport);
+logger.addTransport(errorFileTransport);
+```
+
+### File Format
+
+FileTransport automatically uses appropriate formatting:
+
+```typescript
+// JSON format for structured logging
+logger.setOptions({
+  pluggableFormatter: createFormatter("ndjson")
+});
+
+// Human-readable format for development
+logger.setOptions({
+  pluggableFormatter: createFormatter("default")
+});
 ```
 
 ---
 
 ## DiscordWebhookTransport
 
-Sends logs to Discord channels via webhooks with intelligent batching and rate limiting.
+Sends logs to Discord channels via webhooks, perfect for real-time alerts and monitoring.
 
 ### Basic Usage
 
 ```typescript
 import { logger, DiscordWebhookTransport } from "jellylogger";
 
-const webhookUrl = "https://discord.com/api/webhooks/1234567890/abcdef...";
-logger.addTransport(new DiscordWebhookTransport(webhookUrl));
+const discordTransport = new DiscordWebhookTransport(
+  "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL"
+);
+
+logger.addTransport(discordTransport);
 ```
 
-### Configuration Options
+### Features
+
+- **Rate Limiting**: Automatic batching to respect Discord's rate limits
+- **Message Formatting**: Optimized for Discord's message format
+- **Error Handling**: Graceful fallback when Discord is unavailable
+- **Batch Processing**: Groups messages to reduce API calls
+
+### Configuration
 
 ```typescript
-import { logger, DiscordWebhookTransport } from "jellylogger";
-
-const transport = new DiscordWebhookTransport(webhookUrl, {
-  batchIntervalMs: 5000,        // Send batches every 5 seconds
-  maxBatchSize: 5,              // Max 5 logs per batch
-  username: "MyApp Logger",     // Bot username in Discord
-  maxRetries: 3,                // Retry failed sends 3 times
-  suppressConsoleErrors: false  // Show webhook errors in console
-});
-
-logger.addTransport(transport);
-```
-
-### Rate Limiting & Batching
-
-Discord webhooks have rate limits (5 requests per 2 seconds). The transport handles this automatically:
-
-- **Batching**: Combines multiple log entries into single messages
-- **Rate Limiting**: Respects Discord's rate limits with exponential backoff
-- **Retry Logic**: Automatically retries failed requests
-- **Message Splitting**: Splits large messages to stay under Discord's 2000 character limit
-
-### Message Formatting
-
-```typescript
-// String format (default) - formatted for Discord
-logger.error("Payment failed", { orderId: "12345", amount: 99.99 });
-// Discord: **[2024-01-15T10:30:45.123Z] ERROR:** Payment failed
-//          ```json
-//          {"orderId": "12345", "amount": 99.99}
-//          ```
-
-// JSON format - code blocks
-logger.setOptions({ format: "json" });
-logger.error("Payment failed", { orderId: "12345" });
-// Discord: ```json
-//          {"timestamp":"2024-01-15T10:30:45.123Z","level":2,"levelName":"ERROR",...}
-//          ```
-```
-
-### Discord Integration with Logger
-
-Use the special `discord: true` flag to send specific logs:
-
-```typescript
-logger.setOptions({
-  discordWebhookUrl: "https://discord.com/api/webhooks/..."
-});
-
-// Regular log - goes to configured transports only
-logger.info("User logged in", { userId: 123 });
-
-// Alert log - goes to transports AND Discord
-logger.error("Payment processor down", { 
-  service: "stripe",
-  discord: true  // Triggers Discord webhook
+const discordTransport = new DiscordWebhookTransport(webhookUrl, {
+  username: "MyApp Logger",          // Bot username in Discord
+  batchIntervalMs: 2000,            // Batch messages every 2 seconds
+  maxBatchSize: 10,                 // Max 10 messages per batch
+  retryAttempts: 3,                 // Retry failed sends 3 times
+  retryDelayMs: 1000               // Wait 1 second between retries
 });
 ```
 
-### Best Practices
+### Message Format
+
+Discord messages are automatically formatted:
 
 ```typescript
-// Use for important alerts only
-logger.fatal("Database connection lost", { discord: true });
-logger.error("Payment failed", { orderId: "123", discord: true });
-
-// Don't spam Discord with debug logs
-logger.debug("Cache hit", { key: "user:123" }); // No discord flag
-
-// Use appropriate usernames for different environments
-const transport = new DiscordWebhookTransport(webhookUrl, {
-  username: process.env.NODE_ENV === 'production' ? 'Prod Alerts' : 'Dev Logs'
+logger.error("Database connection failed", {
+  database: "users",
+  error: "Connection timeout",
+  retryCount: 3
 });
+```
+
+Appears in Discord as:
+```
+[2023-12-07 15:30:45] ERROR: Database connection failed
+database: users
+error: Connection timeout
+retryCount: 3
+```
+
+### Level-Specific Discord Logging
+
+```typescript
+// Only send errors and fatals to Discord
+const discordTransport = new DiscordWebhookTransport(webhookUrl);
+
+// Create a child logger for Discord-worthy events
+const alertLogger = logger.child({ messagePrefix: "ALERT" });
+
+// Add Discord transport only to alert logger
+alertLogger.addTransport(discordTransport);
+
+// Regular logs go to console/file
+logger.info("Regular application flow");
+
+// Alerts go to Discord
+alertLogger.error("Critical database error");
 ```
 
 ---
 
 ## WebSocketTransport
 
-Streams logs in real-time to WebSocket servers with automatic reconnection.
+Streams logs in real-time over WebSocket connections for live monitoring dashboards.
 
 ### Basic Usage
 
@@ -306,37 +304,6 @@ const transport = new WebSocketTransport("ws://localhost:8080/logs", {
     });
   }
 });
-```
-
-### Server Example
-
-Here's a simple WebSocket server that can receive logs:
-
-```typescript
-// server.ts - Simple log receiver
-const server = Bun.serve({
-  port: 8080,
-  websocket: {
-    message(ws, message) {
-      try {
-        const logEntry = JSON.parse(message);
-        console.log('Received log:', logEntry);
-        
-        // Store to database, forward to other systems, etc.
-      } catch (error) {
-        console.error('Invalid log message:', message);
-      }
-    },
-    open(ws) {
-      console.log('Log client connected');
-    },
-    close(ws) {
-      console.log('Log client disconnected');
-    }
-  }
-});
-
-console.log(`WebSocket log server running on ws://localhost:${server.port}`);
 ```
 
 ### Real-time Monitoring
@@ -391,7 +358,7 @@ import { logger, LogLevel } from "jellylogger";
 // Global options apply to all transports
 logger.setOptions({
   level: LogLevel.INFO,
-  format: "json",
+  pluggableFormatter: createFormatter("ndjson"),
   redaction: {
     keys: ["password", "token"]
   }
@@ -425,7 +392,7 @@ function configureTransports() {
     logger.setOptions({
       level: LogLevel.DEBUG,
       transports: [new ConsoleTransport()],
-      format: "string",
+      pluggableFormatter: createFormatter("default"),
       useHumanReadableTime: true
     });
   } else if (env === 'test') {
@@ -433,13 +400,13 @@ function configureTransports() {
     logger.setOptions({
       level: LogLevel.WARN,
       transports: [new FileTransport("./logs/test.log")],
-      format: "json"
+      pluggableFormatter: createFormatter("ndjson")
     });
   } else {
     // Production: Console + File + Discord for alerts
     logger.setOptions({
       level: LogLevel.INFO,
-      format: "json",
+      pluggableFormatter: createFormatter("ndjson"),
       transports: [
         new ConsoleTransport(),
         new FileTransport("./logs/app.log", {
@@ -490,42 +457,27 @@ debugLogger.debug("Detailed trace information", { traceId: "abc123" });
 ### Failover Strategies
 
 ```typescript
-// Implement transport failover
+// Custom failover transport
 class FailoverTransport implements Transport {
-  private primaryTransport: Transport;
-  private fallbackTransport: Transport;
-  private useFallback = false;
-
-  constructor(primary: Transport, fallback: Transport) {
-    this.primaryTransport = primary;
-    this.fallbackTransport = fallback;
-  }
+  constructor(
+    private primaryTransport: Transport,
+    private fallbackTransport: Transport
+  ) {}
 
   async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
     try {
-      if (!this.useFallback) {
-        await this.primaryTransport.log(entry, options);
-        return;
-      }
+      await this.primaryTransport.log(entry, options);
     } catch (error) {
-      console.warn('Primary transport failed, switching to fallback');
-      this.useFallback = true;
-    }
-
-    try {
+      console.warn("Primary transport failed, using fallback:", error);
       await this.fallbackTransport.log(entry, options);
-    } catch (error) {
-      console.error('Both transports failed:', error);
     }
   }
 
   async flush(options?: TransportOptions): Promise<void> {
-    if (this.primaryTransport.flush) {
-      await this.primaryTransport.flush(options);
-    }
-    if (this.fallbackTransport.flush) {
-      await this.fallbackTransport.flush(options);
-    }
+    await Promise.allSettled([
+      this.primaryTransport.flush?.(options),
+      this.fallbackTransport.flush?.(options)
+    ]);
   }
 }
 
@@ -546,40 +498,39 @@ logger.addTransport(failoverTransport);
 
 ```typescript
 import type { Transport, LogEntry, TransportOptions } from "jellylogger";
+import { getRedactedEntry } from "jellylogger";
 
 class DatabaseTransport implements Transport {
-  private connectionString: string;
-
-  constructor(connectionString: string) {
-    this.connectionString = connectionString;
-  }
+  constructor(private database: Database) {}
 
   async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
     try {
-      // Insert log into database
-      await this.insertLog({
-        timestamp: new Date(entry.timestamp),
-        level: entry.level,
-        message: entry.message,
-        data: JSON.stringify(entry.data),
-        args: JSON.stringify(entry.args)
+      // Apply redaction for database storage
+      const redacted = getRedactedEntry(entry, options?.redaction, 'file');
+      
+      // Store in database
+      await this.database.insert('logs', {
+        timestamp: redacted.timestamp,
+        level: redacted.level,
+        message: redacted.message,
+        data: JSON.stringify(redacted.data || {}),
+        args: JSON.stringify(redacted.args)
       });
     } catch (error) {
-      console.error('Database transport error:', error);
+      console.error('DatabaseTransport error:', error);
+      // Don't throw - let other transports continue
     }
   }
 
   async flush(options?: TransportOptions): Promise<void> {
-    // Flush any pending database operations
-  }
-
-  private async insertLog(logData: any): Promise<void> {
-    // Database insertion logic
+    // Ensure all pending writes are committed
+    await this.database.flush();
   }
 }
 
-// Use custom transport
-logger.addTransport(new DatabaseTransport("postgresql://..."));
+// Usage
+const dbTransport = new DatabaseTransport(myDatabase);
+logger.addTransport(dbTransport);
 ```
 
 ### Transport Interface
@@ -598,28 +549,78 @@ interface Transport {
 }
 ```
 
+### Transport Best Practices
+
+1. **Error Handling**: Never throw errors from `log()` method
+2. **Async Safety**: Use Promise.resolve() for sync operations
+3. **Redaction**: Apply appropriate redaction for your destination
+4. **Formatting**: Use provided formatters or implement custom logic
+5. **Flushing**: Implement `flush()` for graceful shutdown
+
+```typescript
+class ExampleTransport implements Transport {
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    try {
+      // Apply redaction
+      const redacted = getRedactedEntry(entry, options?.redaction, 'file');
+      
+      // Format using provided formatter or default
+      let formatted: string;
+      if (options?.pluggableFormatter) {
+        formatted = options.pluggableFormatter.format(redacted);
+      } else if (options?.formatter) {
+        formatted = options.formatter(redacted);
+      } else {
+        formatted = JSON.stringify(redacted);
+      }
+      
+      // Send to destination
+      await this.sendToDestination(formatted);
+    } catch (error) {
+      console.error('Transport error:', error);
+      // Don't re-throw - allow other transports to continue
+    }
+  }
+
+  async flush(): Promise<void> {
+    // Implement any necessary cleanup
+  }
+
+  private async sendToDestination(message: string): Promise<void> {
+    // Implementation specific to your destination
+  }
+}
+```
+
 ---
 
 ## Performance Considerations
 
-### Async vs Sync Operations
-
-- **ConsoleTransport**: Synchronous operations (fastest)
-- **FileTransport**: Synchronous writes with async rotation
-- **DiscordWebhookTransport**: Async with batching and queuing
-- **WebSocketTransport**: Async with queuing and reconnection
-
-### Batching and Queuing
+### Async Operations
 
 ```typescript
-// Transports handle batching automatically
-logger.info("Log 1");
-logger.info("Log 2");
-logger.info("Log 3");
-// DiscordWebhookTransport will batch these into a single request
+// All transport operations are async for better performance
+class HighPerformanceTransport implements Transport {
+  private queue: LogEntry[] = [];
+  private flushTimer: Timer | null = null;
 
-// Force immediate flush if needed
-await logger.flushAll();
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    // Queue entries for batch processing
+    this.queue.push(entry);
+    
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => this.processBatch(), 100);
+    }
+  }
+
+  private async processBatch(): Promise<void> {
+    const batch = this.queue.splice(0);
+    if (batch.length > 0) {
+      await this.sendBatch(batch);
+    }
+    this.flushTimer = null;
+  }
+}
 ```
 
 ### Memory Usage
@@ -659,55 +660,105 @@ class MonitoredTransport implements Transport {
 
 ### Transport Selection
 
-1. **Development**: ConsoleTransport for immediate feedback
-2. **Testing**: FileTransport to avoid console noise
-3. **Staging**: Console + File for debugging
-4. **Production**: Console + File + Discord for monitoring
+- **Development**: ConsoleTransport for immediate feedback
+- **Testing**: FileTransport to avoid console noise
+- **Production**: Multiple transports for redundancy
+- **Monitoring**: WebSocketTransport for real-time dashboards
+- **Alerting**: DiscordWebhookTransport for critical notifications
 
 ### Configuration Tips
 
 ```typescript
-// Use environment variables for sensitive data
-const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
-const logLevel = process.env.LOG_LEVEL as keyof typeof LogLevel || 'INFO';
+// Separate concerns with different transport configurations
+function setupTransports() {
+  // Application logs - detailed file logging
+  const appTransport = new FileTransport("./logs/application.log", {
+    maxFileSize: 100 * 1024 * 1024,
+    maxFiles: 30,
+    compress: true,
+    dateRotation: true
+  });
 
-// Configure based on environment
-logger.setOptions({
-  level: LogLevel[logLevel],
-  transports: [
+  // Error logs - separate file + Discord alerts
+  const errorTransport = new FileTransport("./logs/errors.log", {
+    maxFileSize: 50 * 1024 * 1024,
+    maxFiles: 90,  // Keep errors longer
+    compress: true
+  });
+
+  const discordAlerts = new DiscordWebhookTransport(process.env.DISCORD_WEBHOOK!);
+
+  // Real-time monitoring
+  const monitoringTransport = new WebSocketTransport("ws://monitoring.internal/logs");
+
+  logger.setTransports([
     new ConsoleTransport(),
-    ...(process.env.NODE_ENV === 'production' ? [
-      new FileTransport("./logs/app.log", { compress: true }),
-      ...(discordWebhookUrl ? [new DiscordWebhookTransport(discordWebhookUrl)] : [])
-    ] : [])
-  ]
-});
+    appTransport,
+    errorTransport,
+    discordAlerts,
+    monitoringTransport
+  ]);
+}
 ```
 
 ### Error Handling
 
 ```typescript
-// Always handle transport errors gracefully
-logger.addTransport(new FileTransport("./logs/app.log"));
+// Implement circuit breaker pattern for unreliable transports
+class CircuitBreakerTransport implements Transport {
+  private failures = 0;
+  private maxFailures = 5;
+  private isOpen = false;
+  private lastFailureTime = 0;
+  private retryTimeoutMs = 60000; // 1 minute
 
-// Transports handle their own errors, but you can monitor them
-process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled promise rejection (possibly from transport):', reason);
-});
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    if (this.isOpen) {
+      if (Date.now() - this.lastFailureTime > this.retryTimeoutMs) {
+        this.isOpen = false;
+        this.failures = 0;
+      } else {
+        return; // Circuit open, skip logging
+      }
+    }
+
+    try {
+      await this.actualTransport.log(entry, options);
+      this.failures = 0; // Reset on success
+    } catch (error) {
+      this.failures++;
+      this.lastFailureTime = Date.now();
+      
+      if (this.failures >= this.maxFailures) {
+        this.isOpen = true;
+        console.warn('Circuit breaker opened for transport');
+      }
+      
+      throw error;
+    }
+  }
+}
 ```
 
 ### Graceful Shutdown
 
 ```typescript
-// Always flush transports before shutdown
+// Ensure all transports are flushed before shutdown
 async function gracefulShutdown() {
-  logger.info("Application shutting down...");
-  await logger.flushAll();
+  console.log("Shutting down...");
+  
+  try {
+    await logger.flushAll();
+    console.log("All logs flushed successfully");
+  } catch (error) {
+    console.error("Error flushing logs:", error);
+  }
+  
   process.exit(0);
 }
 
-process.on('SIGINT', gracefulShutdown);
 process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 ```
 
 ---
@@ -716,45 +767,30 @@ process.on('SIGTERM', gracefulShutdown);
 
 ### Common Issues
 
-**File Transport Issues:**
-```typescript
-// Issue: Permission denied
-// Solution: Ensure directory exists and is writable
-const transport = new FileTransport("./logs/app.log"); // Creates ./logs/ if needed
+1. **File Permission Errors**
+   ```typescript
+   // Ensure log directory exists and is writable
+   const transport = new FileTransport("./logs/app.log");
+   // Check directory permissions before adding transport
+   ```
 
-// Issue: Disk space
-// Solution: Monitor disk space and configure rotation
-const transport = new FileTransport("./logs/app.log", {
-  maxFileSize: 50 * 1024 * 1024, // Smaller files
-  maxFiles: 3 // Keep fewer files
-});
-```
+2. **Discord Rate Limiting**
+   ```typescript
+   // Use batching to avoid rate limits
+   const transport = new DiscordWebhookTransport(url, {
+     batchIntervalMs: 5000,  // Increase batch interval
+     maxBatchSize: 5         // Reduce batch size
+   });
+   ```
 
-**Discord Transport Issues:**
-```typescript
-// Issue: Rate limiting
-// Solution: Increase batch interval
-const transport = new DiscordWebhookTransport(webhookUrl, {
-  batchIntervalMs: 5000, // Longer intervals
-  maxBatchSize: 3 // Smaller batches
-});
-
-// Issue: Webhook failures
-// Solution: Enable error logging
-const transport = new DiscordWebhookTransport(webhookUrl, {
-  suppressConsoleErrors: false // See webhook errors
-});
-```
-
-**WebSocket Transport Issues:**
-```typescript
-// Issue: Connection failures
-// Solution: Implement longer reconnection intervals
-const transport = new WebSocketTransport("ws://localhost:8080/logs", {
-  reconnectIntervalMs: 5000,
-  maxReconnectIntervalMs: 60000
-});
-```
+3. **WebSocket Connection Issues**
+   ```typescript
+   // Monitor connection state
+   const transport = new WebSocketTransport(url, {
+     reconnectIntervalMs: 1000,
+     maxReconnectIntervalMs: 60000
+   });
+   ```
 
 ### Debug Mode
 
@@ -762,7 +798,7 @@ const transport = new WebSocketTransport("ws://localhost:8080/logs", {
 // Enable transport debugging
 logger.setOptions({
   level: LogLevel.DEBUG,
-  format: "json"
+  pluggableFormatter: createFormatter("ndjson")
 });
 
 // Monitor transport performance
@@ -776,9 +812,7 @@ console.log(`Logging took ${Date.now() - startTime}ms`);
 
 ## More Resources
 
-- [Usage Guide](./usage.md) - Complete usage documentation
-- [API Reference](./api.md) - API documentation
-- [Redaction Guide](./redaction.md) - Advanced redaction patterns
-- [Examples](./examples.md) - Real-world usage examples
-
----
+- [Usage Guide](./usage.md) - General usage patterns
+- [API Reference](./api.md) - Complete API documentation
+- [Extending JellyLogger](./extending.md) - Custom transport development
+- [Migration Guide](./migration.md) - Upgrading from other loggers
