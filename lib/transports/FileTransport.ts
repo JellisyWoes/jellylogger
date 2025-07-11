@@ -1,11 +1,20 @@
-import { EOL as osEOL } from 'os';
 import { gzipSync } from 'bun';
-import { join, dirname, basename, extname } from 'path';
-import { existsSync, mkdirSync, appendFileSync, statSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'fs';
-import { getRedactedEntry } from '../redaction';
-import { DEFAULT_FORMATTER } from '../formatters';
-import { safeJsonStringify } from '../utils/serialization';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'fs';
+import { EOL as osEOL } from 'os';
+import { basename, dirname, extname, join } from 'path';
 import type { LogEntry, LoggerOptions, Transport, TransportOptions } from '../core/types';
+import { DEFAULT_FORMATTER } from '../formatters';
+import { getRedactedEntry } from '../redaction';
+import { safeJsonStringify } from '../utils/serialization';
 
 /**
  * Configuration for log rotation.
@@ -73,22 +82,22 @@ export class FileTransport implements Transport {
    * @param bunOps - Optional Bun operations for dependency injection
    */
   constructor(
-    filePath: string, 
+    filePath: string,
     rotationConfig?: LogRotationConfig,
-    bunOps?: Partial<InjectedBunFileOperations>
+    bunOps?: Partial<InjectedBunFileOperations>,
   ) {
     this.filePath = filePath;
     this.rotationConfig = rotationConfig;
     this.bunFileOps = {
-      file: bunOps?.file || Bun.file,
-      write: bunOps?.write || Bun.write,
-      appendFileSync: bunOps?.appendFileSync || appendFileSync,
+      file: bunOps?.file ?? Bun.file,
+      write: bunOps?.write ?? Bun.write,
+      appendFileSync: bunOps?.appendFileSync ?? appendFileSync,
       shell: bunOps?.shell,
       fs: bunOps?.fs,
     };
-    
+
     // Set up file system operations - use injected fs or default to Node.js fs
-    this.fs = this.bunFileOps.fs || {
+    this.fs = this.bunFileOps.fs ?? {
       existsSync,
       statSync,
       readFileSync,
@@ -96,7 +105,7 @@ export class FileTransport implements Transport {
       renameSync,
       unlinkSync,
     };
-    
+
     // Removed this.shell assignment and use only local variable if needed
     if (rotationConfig?.dateRotation) {
       this.currentDate = new Date().toISOString().split('T')[0];
@@ -128,11 +137,11 @@ export class FileTransport implements Transport {
   log(entry: LogEntry, options?: TransportOptions): Promise<void> {
     try {
       // Convert TransportOptions to LoggerOptions for internal use
-      const loggerOptions: LoggerOptions = options || {} as LoggerOptions;
-      
+      const loggerOptions: LoggerOptions = options ?? ({} as LoggerOptions);
+
       // Apply redaction specifically for file output
       const redactedEntry = getRedactedEntry(entry, loggerOptions.redaction, 'file');
-      
+
       // Check for date-based rotation before writing (async in background)
       if (this.rotationConfig?.dateRotation) {
         const currentDate = new Date().toISOString().split('T')[0];
@@ -140,35 +149,45 @@ export class FileTransport implements Transport {
           // Schedule rotation in background without blocking
           if (!this.rotationPromise) {
             this.rotationPromise = this.rotateLogs();
-            this.rotationPromise.finally(() => {
-              this.currentDate = currentDate;
-              this.rotationPromise = null;
-            }).catch(error => {
-              console.error('FileTransport date rotation error:', error);
-            });
+            this.rotationPromise
+              .finally(() => {
+                this.currentDate = currentDate;
+                this.rotationPromise = null;
+              })
+              .catch(error => {
+                console.error('FileTransport date rotation error:', error);
+              });
           }
         }
       }
 
       // Format the log string using formatters
       let logString: string;
-      
+
       if (loggerOptions.pluggableFormatter) {
         try {
           const formatted = loggerOptions.pluggableFormatter.format(redactedEntry, {
-            useColors: false // No colors in file output
+            useColors: false, // No colors in file output
           });
-          logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
+          logString =
+            (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
         } catch (error) {
-          console.error('Pluggable formatter failed in FileTransport, using default:', error instanceof Error ? error.message : String(error));
+          console.error(
+            'Pluggable formatter failed in FileTransport, using default:',
+            error instanceof Error ? error.message : String(error),
+          );
           logString = DEFAULT_FORMATTER.format(redactedEntry, { useColors: false }) + osEOL;
         }
       } else if (loggerOptions.formatter) {
         try {
           const formatted = loggerOptions.formatter(redactedEntry);
-          logString = (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
+          logString =
+            (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
         } catch (error) {
-          console.error('Custom formatter failed in FileTransport, using default:', error instanceof Error ? error.message : String(error));
+          console.error(
+            'Custom formatter failed in FileTransport, using default:',
+            error instanceof Error ? error.message : String(error),
+          );
           logString = DEFAULT_FORMATTER.format(redactedEntry, { useColors: false }) + osEOL;
         }
       } else if (loggerOptions.format === 'json') {
@@ -186,20 +205,22 @@ export class FileTransport implements Transport {
         console.error('FileTransport write error:', error);
         return Promise.resolve();
       }
-      
+
       // Schedule size-based rotation check (don't block or await)
       // Removed setTimeout for better test determinism
       if (this.rotationConfig?.maxFileSize && !this.rotationPromise) {
         try {
           // Use fs.statSync for size checking to allow proper mocking in tests
           const stats = this.fs.statSync(this.filePath);
-          if (stats.size > this.rotationConfig!.maxFileSize!) {
+          if (stats.size > this.rotationConfig.maxFileSize) {
             this.rotationPromise = this.rotateLogs();
-            this.rotationPromise.finally(() => {
-              this.rotationPromise = null;
-            }).catch(error => {
-              console.error('FileTransport size rotation error:', error);
-            });
+            this.rotationPromise
+              .finally(() => {
+                this.rotationPromise = null;
+              })
+              .catch(error => {
+                console.error('FileTransport size rotation error:', error);
+              });
           }
         } catch (error) {
           console.error('FileTransport size check error:', error);
@@ -213,19 +234,18 @@ export class FileTransport implements Transport {
     }
   }
 
-
   /**
    * Rotate log files with proper locking and error handling.
    */
   private async rotateLogs(): Promise<void> {
     if (!this.rotationConfig || this.isRotating) return;
-    
+
     this.isRotating = true;
-    
+
     try {
       const maxFiles = this.rotationConfig.maxFiles ?? 5;
       const compress = this.rotationConfig.compress ?? true;
-      
+
       // Check if current file exists
       const currentFileExists = this.fs.existsSync(this.filePath);
       if (!currentFileExists) {
@@ -239,12 +259,12 @@ export class FileTransport implements Transport {
       try {
         // First, delete files that exceed maxFiles limit
         for (let i = maxFiles; i >= 1; i--) {
-          const oldFile = compress 
+          const oldFile = compress
             ? join(dir, `${name}.${i}${ext}.gz`)
             : join(dir, `${name}.${i}${ext}`);
-          
+
           const exists = this.fs.existsSync(oldFile);
-          
+
           if (exists) {
             try {
               this.fs.unlinkSync(oldFile);
@@ -256,12 +276,12 @@ export class FileTransport implements Transport {
 
         // Then shift existing rotated files (from highest to lowest)
         for (let i = maxFiles - 1; i >= 1; i--) {
-          const currentFile = compress 
+          const currentFile = compress
             ? join(dir, `${name}.${i}${ext}.gz`)
             : join(dir, `${name}.${i}${ext}`);
-          
+
           const exists = this.fs.existsSync(currentFile);
-          
+
           if (exists) {
             const nextFile = compress
               ? join(dir, `${name}.${i + 1}${ext}.gz`)

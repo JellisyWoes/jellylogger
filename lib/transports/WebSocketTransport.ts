@@ -1,6 +1,6 @@
+import type { LogEntry, LoggerOptions, Transport } from '../core/types';
 import { getRedactedEntry } from '../redaction';
 import { safeJsonStringify } from '../utils/serialization';
-import type { LogEntry, LoggerOptions, Transport } from '../core/types';
 
 export interface WebSocketTransportOptions {
   /** Reconnect interval in ms (initial). Default: 1000 */
@@ -34,7 +34,7 @@ export class WebSocketTransport implements Transport {
     this.reconnectInterval = options?.reconnectIntervalMs ?? 1000;
     this.maxReconnectInterval = options?.maxReconnectIntervalMs ?? 30000;
     this.serializer = options?.serializer ?? safeJsonStringify;
-    
+
     // Start initial connection
     this.connectionPromise = this.connect();
   }
@@ -78,19 +78,19 @@ export class WebSocketTransport implements Transport {
   }
 
   private async flushQueue(): Promise<void> {
-    let sentCount = 0;
+    let _sentCount = 0;
     while (this.queue.length > 0) {
       if (this.ws?.readyState !== WebSocket.OPEN) {
         break;
       }
-      
+
       const msg = this.queue.shift();
       if (!msg) continue;
-      
+
       try {
         this.ws.send(msg);
-        sentCount++;
-      } catch (err) {
+        _sentCount++;
+      } catch (_err) {
         this.queue.unshift(msg);
         break;
       }
@@ -102,10 +102,7 @@ export class WebSocketTransport implements Transport {
     this.reconnecting = true;
 
     setTimeout(() => {
-      this.reconnectInterval = Math.min(
-        this.reconnectInterval * 2, 
-        this.maxReconnectInterval
-      );
+      this.reconnectInterval = Math.min(this.reconnectInterval * 2, this.maxReconnectInterval);
       this.connectionPromise = this.connect().catch(() => {
         // Continue retrying on failure
       });
@@ -115,7 +112,7 @@ export class WebSocketTransport implements Transport {
   async log(entry: LogEntry, options?: LoggerOptions): Promise<void> {
     const redact = this.options.redact ?? true;
     // Safely access redaction config if options is LoggerOptions
-    const redactionConfig = (options && 'redaction' in options) ? options.redaction : undefined;
+    const redactionConfig = options && 'redaction' in options ? options.redaction : undefined;
     const redactedEntry = redact ? getRedactedEntry(entry, redactionConfig, 'file') : entry;
     const msg = this.serializer(redactedEntry);
 
@@ -126,7 +123,7 @@ export class WebSocketTransport implements Transport {
     if (this.connectionPromise) {
       try {
         await this.connectionPromise;
-      } catch (err) {
+      } catch (_err) {
         return; // Message is already in queue for retry
       }
     }
@@ -135,7 +132,7 @@ export class WebSocketTransport implements Transport {
     if (this.ws?.readyState === WebSocket.OPEN && !this.queueFlushPromise) {
       try {
         await this.flushQueue();
-      } catch (err) {
+      } catch (_err) {
         // Silent failure, message remains queued
       }
     }
@@ -146,7 +143,7 @@ export class WebSocketTransport implements Transport {
     if (this.connectionPromise) {
       try {
         await this.connectionPromise;
-      } catch (err) {
+      } catch (_err) {
         // Connection failed, nothing to flush
       }
     }
@@ -155,7 +152,7 @@ export class WebSocketTransport implements Transport {
     if (this.queueFlushPromise) {
       try {
         await this.queueFlushPromise;
-      } catch (err) {
+      } catch (_err) {
         // Ongoing flush failed
       }
     }
@@ -167,7 +164,7 @@ export class WebSocketTransport implements Transport {
       });
       await this.queueFlushPromise;
     }
-    
+
     // If we still have messages and we're connected, make one more attempt
     if (this.ws?.readyState === WebSocket.OPEN && this.queue.length > 0) {
       await this.flushQueue();
