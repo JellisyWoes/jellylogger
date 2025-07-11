@@ -2,6 +2,31 @@ import { mock, expect } from "bun:test";
 import type { BunFile as ActualBunFile } from "bun";
 import type { Transport, LogEntry, TransportOptions } from "../lib/index";
 
+// --- CONSOLE MOCKS ---
+export const mockConsole = {
+  log: mock(() => {}),
+  info: mock(() => {}),
+  warn: mock(() => {}),
+  error: mock(() => {}),
+  debug: mock(() => {}),
+};
+
+// Store original console methods
+const originalConsole = {
+  log: console.log,
+  info: console.info,
+  warn: console.warn,
+  error: console.error,
+  debug: console.debug,
+};
+
+// Apply console mocks globally
+console.log = mockConsole.log;
+console.info = mockConsole.info;
+console.warn = mockConsole.warn;
+console.error = mockConsole.error;
+console.debug = mockConsole.debug;
+
 // --- BUN MOCKS ---
 const mockFileExistsForBunMock = mock<() => Promise<boolean>>(async () => false);
 const mockFileTextForBunMock = mock<() => Promise<string>>(async () => "");
@@ -49,6 +74,20 @@ export const mockShellOps = {
 
 // Mock for 'os' module to control EOL in tests
 mock.module('os', () => ({ EOL: '\n' }));
+
+// Mock the 'fs' module to prevent real filesystem operations
+export const mockFsOps = {
+  existsSync: mock(() => true), // Always return true to avoid directory creation
+  mkdirSync: mock(() => {}), // Mock directory creation
+  appendFileSync: mock(() => {}), // Mock file writing
+  statSync: mock(() => ({ size: 0, mtime: new Date() })), // Mock file stats
+  readFileSync: mock(() => ''), // Mock file reading
+  writeFileSync: mock(() => {}), // Mock file writing
+  renameSync: mock(() => {}), // Mock file renaming
+  unlinkSync: mock(() => {}), // Mock file deletion
+};
+
+mock.module('fs', () => mockFsOps);
 
 // Setup Bun global mocks
 if (typeof globalThis.Bun === 'undefined') {
@@ -155,6 +194,20 @@ export class MemoryTransport implements Transport {
   }
 }
 
+// Helper to create FileTransport with mocked filesystem operations
+export function createMockedFileTransport(filePath: string, rotationConfig?: any) {
+  // Import FileTransport here to avoid circular imports
+  const { FileTransport } = require("../lib/transports/FileTransport");
+  
+  return new FileTransport(filePath, rotationConfig, {
+    file: actualMockBunFileFn,
+    write: actualMockBunWriteFn,
+    appendFileSync: mockFsOps.appendFileSync,
+    fs: mockFsOps,
+    shell: mockShellOps
+  });
+}
+
 // Helper to reset all mocks
 export function resetAllMocks() {
   if ((actualMockBunFileFn as any).mockClear) {
@@ -178,6 +231,27 @@ export function resetAllMocks() {
   if (mockShellOps.rm.mockClear) {
     mockShellOps.rm.mockClear();
   }
+  // Reset fs mocks
+  Object.values(mockFsOps).forEach(mockFn => {
+    if (mockFn.mockClear) {
+      mockFn.mockClear();
+    }
+  });
+  // Reset console mocks
+  Object.values(mockConsole).forEach(mockFn => {
+    if (mockFn.mockClear) {
+      mockFn.mockClear();
+    }
+  });
+}
+
+// Helper to restore original console methods (for cleanup)
+export function restoreConsole() {
+  console.log = originalConsole.log;
+  console.info = originalConsole.info;
+  console.warn = originalConsole.warn;
+  console.error = originalConsole.error;
+  console.debug = originalConsole.debug;
 }
 
 // Helper to verify no real files were created
