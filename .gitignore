@@ -38,3 +38,5 @@ coverage
 
 Explaining.md
 STRUCTURE.md
+
+test/testusecase.ts
