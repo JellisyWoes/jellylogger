@@ -31,10 +31,10 @@ bun add jellylogger
 ### Basic Setup
 
 ```typescript
-import { logger } from "jellylogger";
+import { logger } from 'jellylogger';
 
 // Logger comes pre-configured with ConsoleTransport
-logger.info("Hello, JellyLogger!");
+logger.info('Hello, JellyLogger!');
 ```
 
 ---
@@ -44,31 +44,32 @@ logger.info("Hello, JellyLogger!");
 ### Simple Messages
 
 ```typescript
-import { logger } from "jellylogger";
+import { logger } from 'jellylogger';
 
-logger.trace("Detailed debugging info");
-logger.debug("Debug information");
-logger.info("General information");
-logger.warn("Warning message");
-logger.error("Error occurred");
-logger.fatal("Critical system error");
+logger.trace('Detailed debugging info');
+logger.debug('Debug information');
+logger.info('General information');
+logger.warn('Warning message');
+logger.error('Error occurred');
+logger.fatal('Critical system error');
 ```
 
 ### Structured Logging with Data
 
 ```typescript
 // Objects in arguments are automatically treated as structured data
-logger.info("User login", {
-  userId: "12345",
-  ip: "192.168.1.1",
-  userAgent: "Mozilla/5.0...",
-  timestamp: new Date().toISOString()
+logger.info('User login', {
+  userId: '12345',
+  ip: '192.168.1.1',
+  userAgent: 'Mozilla/5.0...',
+  timestamp: new Date().toISOString(),
 });
 
 // Multiple data objects are merged
-logger.error("Database error", 
-  { query: "SELECT * FROM users" },
-  { error: "Connection timeout" },
+logger.error(
+  'Database error',
+  { query: 'SELECT * FROM users' },
+  { error: 'Connection timeout' },
   { retryCount: 3 }
 );
 ```
@@ -77,12 +78,10 @@ logger.error("Database error",
 
 ```typescript
 // Combine strings, numbers, objects, and other types
-logger.info("Processing order", 
-  { orderId: "order-123", amount: 99.99 },
-  "with priority",
-  5,
-  ["item1", "item2"]
-);
+logger.info('Processing order', { orderId: 'order-123', amount: 99.99 }, 'with priority', 5, [
+  'item1',
+  'item2',
+]);
 ```
 
 ---
@@ -92,35 +91,35 @@ logger.info("Processing order",
 JellyLogger supports 7 log levels:
 
 ```typescript
-import { LogLevel } from "jellylogger";
+import { LogLevel } from 'jellylogger';
 
-LogLevel.SILENT  // 0 - No logs
-LogLevel.FATAL   // 1 - Critical errors
-LogLevel.ERROR   // 2 - Errors
-LogLevel.WARN    // 3 - Warnings  
-LogLevel.INFO    // 4 - Information (default)
-LogLevel.DEBUG   // 5 - Debug info
-LogLevel.TRACE   // 6 - Detailed tracing
+LogLevel.SILENT; // 0 - No logs
+LogLevel.FATAL; // 1 - Critical errors
+LogLevel.ERROR; // 2 - Errors
+LogLevel.WARN; // 3 - Warnings
+LogLevel.INFO; // 4 - Information (default)
+LogLevel.DEBUG; // 5 - Debug info
+LogLevel.TRACE; // 6 - Detailed tracing
 ```
 
 ### Setting Log Level
 
 ```typescript
-import { logger, LogLevel } from "jellylogger";
+import { logger, LogLevel } from 'jellylogger';
 
 // Only log WARN and above (WARN, ERROR, FATAL)
 logger.setOptions({
-  level: LogLevel.WARN
+  level: LogLevel.WARN,
 });
 
 // Development mode - show everything
 logger.setOptions({
-  level: LogLevel.TRACE
+  level: LogLevel.TRACE,
 });
 
 // Production mode - errors and warnings only
 logger.setOptions({
-  level: LogLevel.WARN
+  level: LogLevel.WARN,
 });
 ```
 
@@ -131,46 +130,44 @@ logger.setOptions({
 ### Adding Individual Transports
 
 ```typescript
-import { 
-  logger, 
-  FileTransport, 
-  DiscordWebhookTransport, 
-  WebSocketTransport 
-} from "jellylogger";
+import { logger, FileTransport, DiscordWebhookTransport, WebSocketTransport } from 'jellylogger';
 
 // File logging with rotation
-logger.addTransport(new FileTransport("./logs/app.log", {
-  maxFileSize: 10 * 1024 * 1024,  // 10MB
-  maxFiles: 5,                    // Keep 5 rotated files
-  compress: true,                 // Gzip old files
-  dateRotation: true              // Rotate daily
-}));
+logger.addTransport(
+  new FileTransport('./logs/app.log', {
+    maxFileSize: 10 * 1024 * 1024, // 10MB
+    maxFiles: 5, // Keep 5 rotated files
+    compress: true, // Gzip old files
+    dateRotation: true, // Rotate daily
+  })
+);
 
 // Discord webhook (with batching to avoid rate limits)
-logger.addTransport(new DiscordWebhookTransport("https://discord.com/api/webhooks/...", {
-  batchIntervalMs: 2000,
-  maxBatchSize: 10,
-  username: "MyApp Logger"
-}));
+logger.addTransport(
+  new DiscordWebhookTransport('https://discord.com/api/webhooks/...', {
+    batchIntervalMs: 2000,
+    maxBatchSize: 10,
+    username: 'MyApp Logger',
+  })
+);
 
 // WebSocket streaming
-logger.addTransport(new WebSocketTransport("ws://localhost:8080/logs", {
-  reconnectIntervalMs: 1000,
-  maxReconnectIntervalMs: 30000
-}));
+logger.addTransport(
+  new WebSocketTransport('ws://localhost:8080/logs', {
+    reconnectIntervalMs: 1000,
+    maxReconnectIntervalMs: 30000,
+  })
+);
 ```
 
 ### Transport Management
 
 ```typescript
 // Replace all transports
-logger.setTransports([
-  new ConsoleTransport(),
-  new FileTransport("./logs/app.log")
-]);
+logger.setTransports([new ConsoleTransport(), new FileTransport('./logs/app.log')]);
 
 // Remove specific transport
-const fileTransport = new FileTransport("./logs/temp.log");
+const fileTransport = new FileTransport('./logs/temp.log');
 logger.addTransport(fileTransport);
 logger.removeTransport(fileTransport);
 
@@ -183,26 +180,19 @@ logger.clearTransports();
 Use convenient preset functions for common configurations:
 
 ```typescript
-import { 
-  useConsoleAndFile,
-  useConsoleFileAndDiscord,
-  useAllTransports 
-} from "jellylogger";
+import { useConsoleAndFile, useConsoleFileAndDiscord, useAllTransports } from 'jellylogger';
 
 // Console + File
-useConsoleAndFile("./logs/app.log");
+useConsoleAndFile('./logs/app.log');
 
 // Console + File + Discord
-useConsoleFileAndDiscord(
-  "./logs/app.log", 
-  "https://discord.com/api/webhooks/..."
-);
+useConsoleFileAndDiscord('./logs/app.log', 'https://discord.com/api/webhooks/...');
 
 // All transports
 useAllTransports(
-  "./logs/app.log", 
-  "https://discord.com/api/webhooks/...",
-  "ws://localhost:8080/logs"
+  './logs/app.log',
+  'https://discord.com/api/webhooks/...',
+  'ws://localhost:8080/logs'
 );
 ```
 
@@ -216,12 +206,12 @@ Create contextual loggers that inherit parent configuration:
 
 ```typescript
 // Create child logger with prefix
-const userLogger = logger.child({ messagePrefix: "USER" });
-userLogger.info("Login successful"); 
+const userLogger = logger.child({ messagePrefix: 'USER' });
+userLogger.info('Login successful');
 // Output: [USER] Login successful
 
-const authLogger = logger.child({ messagePrefix: "AUTH" });
-authLogger.error("Invalid credentials");
+const authLogger = logger.child({ messagePrefix: 'AUTH' });
+authLogger.error('Invalid credentials');
 // Output: [AUTH] Invalid credentials
 ```
 
@@ -230,21 +220,21 @@ authLogger.error("Invalid credentials");
 ```typescript
 // Child logger with data context
 const requestLogger = logger.child({
-  context: { 
-    requestId: "req-123", 
-    userId: "user-456" 
-  }
+  context: {
+    requestId: 'req-123',
+    userId: 'user-456',
+  },
 });
 
-requestLogger.info("Processing request"); 
+requestLogger.info('Processing request');
 // Includes requestId and userId in all logs from this child
 
 // Alternative syntax using defaultData
 const serviceLogger = logger.child({
   defaultData: {
-    service: "payment-processor",
-    version: "1.2.3"
-  }
+    service: 'payment-processor',
+    version: '1.2.3',
+  },
 });
 ```
 
@@ -252,13 +242,13 @@ const serviceLogger = logger.child({
 
 ```typescript
 // Child loggers can create their own children
-const moduleLogger = requestLogger.child({ messagePrefix: "AUTH" });
-moduleLogger.warn("Invalid token"); 
+const moduleLogger = requestLogger.child({ messagePrefix: 'AUTH' });
+moduleLogger.warn('Invalid token');
 // Output: [AUTH] Invalid token (with inherited context)
 
 // Deep nesting with prefix combination
-const subModuleLogger = moduleLogger.child({ messagePrefix: "JWT" });
-subModuleLogger.debug("Token validation");
+const subModuleLogger = moduleLogger.child({ messagePrefix: 'JWT' });
+subModuleLogger.debug('Token validation');
 // Output: [AUTH] [JWT] Token validation
 ```
 
@@ -272,34 +262,34 @@ function handleRequest(req: Request) {
       requestId: req.headers.get('x-request-id'),
       method: req.method,
       url: req.url,
-      userAgent: req.headers.get('user-agent')
-    }
+      userAgent: req.headers.get('user-agent'),
+    },
   });
 
-  requestLogger.info("Request started");
-  
+  requestLogger.info('Request started');
+
   try {
     // Process request...
-    requestLogger.info("Request processed successfully");
+    requestLogger.info('Request processed successfully');
   } catch (error) {
-    requestLogger.error("Request failed", { error: error.message });
+    requestLogger.error('Request failed', { error: error.message });
   }
 }
 
 // Service-scoped logging
 class DatabaseService {
-  private logger = logger.child({ 
-    messagePrefix: "DB",
-    context: { service: "database" }
+  private logger = logger.child({
+    messagePrefix: 'DB',
+    context: { service: 'database' },
   });
 
   async query(sql: string) {
-    this.logger.debug("Executing query", { sql });
+    this.logger.debug('Executing query', { sql });
     try {
       // Execute query...
-      this.logger.info("Query successful");
+      this.logger.info('Query successful');
     } catch (error) {
-      this.logger.error("Query failed", { sql, error: error.message });
+      this.logger.error('Query failed', { sql, error: error.message });
       throw error;
     }
   }
@@ -313,28 +303,28 @@ class DatabaseService {
 ### Built-in Formatters
 
 ```typescript
-import { logger, createFormatter } from "jellylogger";
+import { logger, createFormatter } from 'jellylogger';
 
 // Human-readable format (default)
-logger.setOptions({ 
-  pluggableFormatter: createFormatter("default") 
+logger.setOptions({
+  pluggableFormatter: createFormatter('default'),
 });
 
 // JSON format - one object per line
-logger.setOptions({ 
-  pluggableFormatter: createFormatter("ndjson") 
+logger.setOptions({
+  pluggableFormatter: createFormatter('ndjson'),
 });
 
 // Logfmt format - key=value pairs
-logger.setOptions({ 
-  pluggableFormatter: createFormatter("logfmt") 
+logger.setOptions({
+  pluggableFormatter: createFormatter('logfmt'),
 });
 ```
 
 ### Custom Formatters
 
 ```typescript
-import type { LogFormatter, LogEntry } from "jellylogger";
+import type { LogFormatter, LogEntry } from 'jellylogger';
 
 class CustomFormatter implements LogFormatter {
   format(entry: LogEntry): string {
@@ -342,8 +332,8 @@ class CustomFormatter implements LogFormatter {
   }
 }
 
-logger.setOptions({ 
-  pluggableFormatter: new CustomFormatter() 
+logger.setOptions({
+  pluggableFormatter: new CustomFormatter(),
 });
 ```
 
@@ -352,13 +342,13 @@ logger.setOptions({
 ```typescript
 // Different formats for different transports
 const consoleTransport = new ConsoleTransport();
-const fileTransport = new FileTransport("./logs/app.log");
+const fileTransport = new FileTransport('./logs/app.log');
 
 logger.setTransports([consoleTransport, fileTransport]);
 
 // Use JSON for files, readable format for console
 logger.setOptions({
-  pluggableFormatter: createFormatter("default") // Console gets this
+  pluggableFormatter: createFormatter('default'), // Console gets this
 });
 
 // File transport will use JSON format internally for structured storage
@@ -373,15 +363,15 @@ logger.setOptions({
 ```typescript
 logger.setOptions({
   redaction: {
-    keys: ["password", "token", "secret", "apiKey"],
-    replacement: "[REDACTED]"
-  }
+    keys: ['password', 'token', 'secret', 'apiKey'],
+    replacement: '[REDACTED]',
+  },
 });
 
-logger.info("User data", { 
-  username: "alice", 
-  password: "hunter2",        // Will be [REDACTED]
-  email: "alice@example.com"
+logger.info('User data', {
+  username: 'alice',
+  password: 'hunter2', // Will be [REDACTED]
+  email: 'alice@example.com',
 });
 ```
 
@@ -391,11 +381,11 @@ logger.info("User data", {
 logger.setOptions({
   redaction: {
     keys: [
-      "*.password",      // any field ending with .password
-      "user.credentials.*", // any field under user.credentials
-      "*token*"          // any field containing "token"
-    ]
-  }
+      '*.password', // any field ending with .password
+      'user.credentials.*', // any field under user.credentials
+      '*token*', // any field containing "token"
+    ],
+  },
 });
 ```
 
@@ -408,10 +398,10 @@ logger.setOptions({
     valuePatterns: [/\b\d{4}-\d{4}-\d{4}-\d{4}\b/], // Credit cards
     redactStrings: true,
     stringPatterns: [
-      /Bearer\s+[\w-]+/gi,           // Bearer tokens
-      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g // Emails
-    ]
-  }
+      /Bearer\s+[\w-]+/gi, // Bearer tokens
+      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, // Emails
+    ],
+  },
 });
 ```
 
@@ -420,26 +410,26 @@ logger.setOptions({
 ```typescript
 logger.setOptions({
   redaction: {
-    keys: ["password", "*.credentials.*"],
+    keys: ['password', '*.credentials.*'],
     keyPatterns: [/secret/i, /token/i],
-    whitelist: ["user.id", "auth.method"],
+    whitelist: ['user.id', 'auth.method'],
     replacement: (value, context) => `[REDACTED:${context.path}]`,
     fieldConfigs: {
-      "user.email": {
-        replacement: "[EMAIL_REDACTED]"
+      'user.email': {
+        replacement: '[EMAIL_REDACTED]',
       },
-      "debug.*": {
-        disabled: true  // Never redact debug fields
+      'debug.*': {
+        disabled: true, // Never redact debug fields
       },
-      "financial.*": {
+      'financial.*': {
         customRedactor: (value, context) => {
-          return context.target === "console" ? value : "[FINANCIAL_DATA]";
-        }
-      }
+          return context.target === 'console' ? value : '[FINANCIAL_DATA]';
+        },
+      },
     },
-    auditRedaction: true,  // Log when redaction occurs
-    redactIn: "file"       // Only redact in file logs, not console
-  }
+    auditRedaction: true, // Log when redaction occurs
+    redactIn: 'file', // Only redact in file logs, not console
+  },
 });
 ```
 
@@ -448,10 +438,10 @@ logger.setOptions({
 ```typescript
 logger.setOptions({
   redaction: {
-    keys: ["password", "ssn"],
-    redactIn: "file",  // Only redact in file outputs
+    keys: ['password', 'ssn'],
+    redactIn: 'file', // Only redact in file outputs
     // Console shows original values, files show redacted
-  }
+  },
 });
 ```
 
@@ -462,22 +452,22 @@ logger.setOptions({
 ### Global Configuration
 
 ```typescript
-import { logger, LogLevel, createFormatter } from "jellylogger";
+import { logger, LogLevel, createFormatter } from 'jellylogger';
 
 logger.setOptions({
   level: LogLevel.INFO,
   useHumanReadableTime: true,
-  format: "json",
-  pluggableFormatter: createFormatter("ndjson"),
+  format: 'json',
+  pluggableFormatter: createFormatter('ndjson'),
   customConsoleColors: {
-    [LogLevel.INFO]: "#00ff00",
-    [LogLevel.ERROR]: "#ff0000",
-    [LogLevel.WARN]: "#ffff00"
+    [LogLevel.INFO]: '#00ff00',
+    [LogLevel.ERROR]: '#ff0000',
+    [LogLevel.WARN]: '#ffff00',
   },
   redaction: {
-    keys: ["password", "token"],
-    redactIn: "both"
-  }
+    keys: ['password', 'token'],
+    redactIn: 'both',
+  },
 });
 ```
 
@@ -486,13 +476,13 @@ logger.setOptions({
 ```typescript
 function configureLogger() {
   const env = process.env.NODE_ENV;
-  
+
   if (env === 'development') {
     logger.setOptions({
       level: LogLevel.DEBUG,
       useHumanReadableTime: true,
       transports: [new ConsoleTransport()],
-      pluggableFormatter: createFormatter("default")
+      pluggableFormatter: createFormatter('default'),
     });
   } else if (env === 'production') {
     logger.setOptions({
@@ -500,17 +490,17 @@ function configureLogger() {
       useHumanReadableTime: false,
       transports: [
         new ConsoleTransport(),
-        new FileTransport("./logs/app.log", {
+        new FileTransport('./logs/app.log', {
           maxFileSize: 100 * 1024 * 1024,
           maxFiles: 7,
-          compress: true
-        })
+          compress: true,
+        }),
       ],
-      pluggableFormatter: createFormatter("ndjson"),
+      pluggableFormatter: createFormatter('ndjson'),
       redaction: {
-        keys: ["password", "token", "secret", "apiKey"],
-        stringPatterns: [/Bearer\s+[\w-]+/gi]
-      }
+        keys: ['password', 'token', 'secret', 'apiKey'],
+        stringPatterns: [/Bearer\s+[\w-]+/gi],
+      },
     });
   }
 }
@@ -525,13 +515,13 @@ configureLogger();
 ### Size-Based Rotation
 
 ```typescript
-import { FileTransport } from "jellylogger";
+import { FileTransport } from 'jellylogger';
 
-const transport = new FileTransport("./logs/app.log", {
-  maxFileSize: 50 * 1024 * 1024,  // 50MB
-  maxFiles: 10,                   // Keep 10 rotated files
-  compress: true,                 // Gzip old files
-  dateRotation: false             // Size-based only
+const transport = new FileTransport('./logs/app.log', {
+  maxFileSize: 50 * 1024 * 1024, // 50MB
+  maxFiles: 10, // Keep 10 rotated files
+  compress: true, // Gzip old files
+  dateRotation: false, // Size-based only
 });
 
 logger.addTransport(transport);
@@ -540,21 +530,21 @@ logger.addTransport(transport);
 ### Date-Based Rotation
 
 ```typescript
-const transport = new FileTransport("./logs/app.log", {
-  dateRotation: true,             // Rotate daily
-  maxFiles: 30,                   // Keep 30 days
-  compress: true
+const transport = new FileTransport('./logs/app.log', {
+  dateRotation: true, // Rotate daily
+  maxFiles: 30, // Keep 30 days
+  compress: true,
 });
 ```
 
 ### Combined Rotation
 
 ```typescript
-const transport = new FileTransport("./logs/app.log", {
+const transport = new FileTransport('./logs/app.log', {
   maxFileSize: 100 * 1024 * 1024, // 100MB
-  maxFiles: 7,                    // 7 files max
-  dateRotation: true,             // Daily rotation
-  compress: true                  // Compress old files
+  maxFiles: 7, // 7 files max
+  dateRotation: true, // Daily rotation
+  compress: true, // Compress old files
 });
 ```
 
@@ -568,16 +558,16 @@ JellyLogger handles transport errors gracefully:
 
 ```typescript
 // Transports won't crash the application if they fail
-logger.addTransport(new FileTransport("/invalid/path/app.log"));
-logger.info("This will still work"); // Console transport continues working
+logger.addTransport(new FileTransport('/invalid/path/app.log'));
+logger.info('This will still work'); // Console transport continues working
 ```
 
 ### Async Error Handling
 
 ```typescript
 // Errors in async transports are caught and logged
-logger.addTransport(new WebSocketTransport("ws://invalid-url"));
-logger.info("Message"); // Error logged to console, app continues
+logger.addTransport(new WebSocketTransport('ws://invalid-url'));
+logger.info('Message'); // Error logged to console, app continues
 ```
 
 ### Flushing Before Shutdown
@@ -585,7 +575,7 @@ logger.info("Message"); // Error logged to console, app continues
 ```typescript
 // Ensure all logs are written before shutdown
 async function gracefulShutdown() {
-  console.log("Shutting down...");
+  console.log('Shutting down...');
   await logger.flushAll();
   process.exit(0);
 }
@@ -602,11 +592,11 @@ process.on('SIGINT', gracefulShutdown);
 
 ```typescript
 // Good: Structured data for searchability
-logger.info("User login", {
+logger.info('User login', {
   userId: user.id,
   email: user.email,
   ip: req.ip,
-  timestamp: new Date().toISOString()
+  timestamp: new Date().toISOString(),
 });
 
 // Avoid: String interpolation
@@ -617,22 +607,22 @@ logger.info(`User ${user.email} logged in from ${req.ip}`);
 
 ```typescript
 // FATAL: Application cannot continue
-logger.fatal("Database connection lost", { error: dbError });
+logger.fatal('Database connection lost', { error: dbError });
 
 // ERROR: Something failed but app continues
-logger.error("Failed to send email", { recipient, error });
+logger.error('Failed to send email', { recipient, error });
 
 // WARN: Potential issues
-logger.warn("High memory usage", { usage: "85%" });
+logger.warn('High memory usage', { usage: '85%' });
 
 // INFO: General application flow
-logger.info("User registered", { userId, email });
+logger.info('User registered', { userId, email });
 
 // DEBUG: Development debugging
-logger.debug("Cache hit", { key, ttl });
+logger.debug('Cache hit', { key, ttl });
 
 // TRACE: Very detailed tracing
-logger.trace("Function entry", { args, timestamp });
+logger.trace('Function entry', { args, timestamp });
 ```
 
 ### 3. Use Child Loggers for Context
@@ -640,12 +630,12 @@ logger.trace("Function entry", { args, timestamp });
 ```typescript
 // Create context-specific loggers
 const userLogger = logger.child({
-  context: { userId: user.id, sessionId: session.id }
+  context: { userId: user.id, sessionId: session.id },
 });
 
 // All logs from this logger include the context
-userLogger.info("Profile updated");
-userLogger.warn("Invalid preference");
+userLogger.info('Profile updated');
+userLogger.warn('Invalid preference');
 ```
 
 ### 4. Configure for Environment
@@ -658,9 +648,7 @@ const isProd = process.env.NODE_ENV === 'production';
 logger.setOptions({
   level: isDev ? LogLevel.DEBUG : LogLevel.INFO,
   useHumanReadableTime: isDev,
-  pluggableFormatter: isDev 
-    ? createFormatter("default") 
-    : createFormatter("ndjson")
+  pluggableFormatter: isDev ? createFormatter('default') : createFormatter('ndjson'),
 });
 ```
 
@@ -670,20 +658,29 @@ logger.setOptions({
 logger.setOptions({
   redaction: {
     keys: [
-      "password", "passwd", "pass",
-      "token", "auth", "authorization",
-      "secret", "key", "credential",
-      "ssn", "social",
-      "*.password", "*.token", "*.secret"
+      'password',
+      'passwd',
+      'pass',
+      'token',
+      'auth',
+      'authorization',
+      'secret',
+      'key',
+      'credential',
+      'ssn',
+      'social',
+      '*.password',
+      '*.token',
+      '*.secret',
     ],
     stringPatterns: [
-      /Bearer\s+[\w-]+/gi,                    // Bearer tokens
-      /\b\d{3}-\d{2}-\d{4}\b/g,              // SSN
-      /\b\d{4}-\d{4}-\d{4}-\d{4}\b/g,        // Credit cards
-      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g // Emails
+      /Bearer\s+[\w-]+/gi, // Bearer tokens
+      /\b\d{3}-\d{2}-\d{4}\b/g, // SSN
+      /\b\d{4}-\d{4}-\d{4}-\d{4}\b/g, // Credit cards
+      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, // Emails
     ],
-    redactStrings: true
-  }
+    redactStrings: true,
+  },
 });
 ```
 
@@ -691,12 +688,14 @@ logger.setOptions({
 
 ```typescript
 // Production file transport with rotation
-logger.addTransport(new FileTransport("./logs/app.log", {
-  maxFileSize: 100 * 1024 * 1024,  // 100MB
-  maxFiles: 30,                    // 30 files (30 days if daily rotation)
-  compress: true,                  // Save disk space
-  dateRotation: true               // Daily rotation
-}));
+logger.addTransport(
+  new FileTransport('./logs/app.log', {
+    maxFileSize: 100 * 1024 * 1024, // 100MB
+    maxFiles: 30, // 30 files (30 days if daily rotation)
+    compress: true, // Save disk space
+    dateRotation: true, // Daily rotation
+  })
+);
 ```
 
 ### 7. Monitor Transport Health
@@ -707,7 +706,7 @@ setInterval(async () => {
   try {
     await logger.flushAll();
   } catch (error) {
-    console.error("Failed to flush logs:", error);
+    console.error('Failed to flush logs:', error);
   }
 }, 30000); // Every 30 seconds
 ```

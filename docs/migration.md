@@ -24,6 +24,7 @@ Winston is one of the most popular Node.js logging libraries. Here's how to migr
 ### Basic Setup Migration
 
 **Winston:**
+
 ```typescript
 import winston from 'winston';
 
@@ -33,78 +34,83 @@ const logger = winston.createLogger({
   transports: [
     new winston.transports.File({ filename: 'error.log', level: 'error' }),
     new winston.transports.File({ filename: 'combined.log' }),
-    new winston.transports.Console()
-  ]
+    new winston.transports.Console(),
+  ],
 });
 ```
 
 **JellyLogger:**
+
 ```typescript
-import { logger, FileTransport, ConsoleTransport, LogLevel, createFormatter } from "jellylogger";
+import { logger, FileTransport, ConsoleTransport, LogLevel, createFormatter } from 'jellylogger';
 
 logger.setOptions({
   level: LogLevel.INFO,
-  pluggableFormatter: createFormatter("ndjson"),
+  pluggableFormatter: createFormatter('ndjson'),
   transports: [
-    new FileTransport("error.log"),      // Handle level filtering in app logic
-    new FileTransport("combined.log"),
-    new ConsoleTransport()
-  ]
+    new FileTransport('error.log'), // Handle level filtering in app logic
+    new FileTransport('combined.log'),
+    new ConsoleTransport(),
+  ],
 });
 ```
 
 ### Log Level Mapping
 
-| Winston | JellyLogger | Notes |
-|---------|-------------|-------|
-| `error` | `error` | Direct mapping |
-| `warn` | `warn` | Direct mapping |
-| `info` | `info` | Direct mapping |
-| `http` | `debug` | No direct equivalent |
-| `verbose` | `debug` | Similar purpose |
-| `debug` | `debug` | Direct mapping |
-| `silly` | `trace` | Most verbose level |
+| Winston   | JellyLogger | Notes                |
+| --------- | ----------- | -------------------- |
+| `error`   | `error`     | Direct mapping       |
+| `warn`    | `warn`      | Direct mapping       |
+| `info`    | `info`      | Direct mapping       |
+| `http`    | `debug`     | No direct equivalent |
+| `verbose` | `debug`     | Similar purpose      |
+| `debug`   | `debug`     | Direct mapping       |
+| `silly`   | `trace`     | Most verbose level   |
 
 ### Structured Logging Migration
 
 **Winston:**
+
 ```typescript
 logger.info('User login', {
   userId: 123,
   ip: '192.168.1.1',
-  userAgent: 'Mozilla/5.0...'
+  userAgent: 'Mozilla/5.0...',
 });
 ```
 
 **JellyLogger:**
+
 ```typescript
 // Identical syntax!
 logger.info('User login', {
   userId: 123,
   ip: '192.168.1.1',
-  userAgent: 'Mozilla/5.0...'
+  userAgent: 'Mozilla/5.0...',
 });
 ```
 
 ### Child Logger Migration
 
 **Winston:**
+
 ```typescript
-const childLogger = logger.child({ 
+const childLogger = logger.child({
   service: 'auth',
-  version: '1.0.0'
+  version: '1.0.0',
 });
 
 childLogger.info('Authentication successful');
 ```
 
 **JellyLogger:**
+
 ```typescript
 const childLogger = logger.child({
   context: {
     service: 'auth',
-    version: '1.0.0'
-  }
+    version: '1.0.0',
+  },
 });
 
 childLogger.info('Authentication successful');
@@ -113,6 +119,7 @@ childLogger.info('Authentication successful');
 ### Custom Transport Migration
 
 **Winston:**
+
 ```typescript
 class CustomTransport extends winston.Transport {
   log(info, callback) {
@@ -126,8 +133,9 @@ logger.add(new CustomTransport());
 ```
 
 **JellyLogger:**
+
 ```typescript
-import type { Transport, LogEntry, TransportOptions } from "jellylogger";
+import type { Transport, LogEntry, TransportOptions } from 'jellylogger';
 
 class CustomTransport implements Transport {
   async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
@@ -143,12 +151,12 @@ logger.addTransport(new CustomTransport());
 
 **Winston Formats → JellyLogger Formatters:**
 
-| Winston Format | JellyLogger Formatter |
-|----------------|----------------------|
-| `winston.format.json()` | `createFormatter("ndjson")` |
-| `winston.format.simple()` | `createFormatter("default")` |
-| `winston.format.logfmt()` | `createFormatter("logfmt")` |
-| Custom format | Custom LogFormatter implementation |
+| Winston Format            | JellyLogger Formatter              |
+| ------------------------- | ---------------------------------- |
+| `winston.format.json()`   | `createFormatter("ndjson")`        |
+| `winston.format.simple()` | `createFormatter("default")`       |
+| `winston.format.logfmt()` | `createFormatter("logfmt")`        |
+| Custom format             | Custom LogFormatter implementation |
 
 ---
 
@@ -159,6 +167,7 @@ Pino is a fast JSON logger. JellyLogger provides similar performance with additi
 ### Basic Setup Migration
 
 **Pino:**
+
 ```typescript
 import pino from 'pino';
 
@@ -167,31 +176,34 @@ const logger = pino({
   transport: {
     target: 'pino-pretty',
     options: {
-      colorize: true
-    }
-  }
+      colorize: true,
+    },
+  },
 });
 ```
 
 **JellyLogger:**
+
 ```typescript
-import { logger, LogLevel, createFormatter } from "jellylogger";
+import { logger, LogLevel, createFormatter } from 'jellylogger';
 
 logger.setOptions({
   level: LogLevel.INFO,
-  pluggableFormatter: createFormatter("default"), // Pretty format for development
-  useHumanReadableTime: true
+  pluggableFormatter: createFormatter('default'), // Pretty format for development
+  useHumanReadableTime: true,
 });
 ```
 
 ### Structured Logging Migration
 
 **Pino:**
+
 ```typescript
 logger.info({ userId: 123, action: 'login' }, 'User logged in');
 ```
 
 **JellyLogger:**
+
 ```typescript
 // Object-first syntax becomes object-last
 logger.info('User logged in', { userId: 123, action: 'login' });
@@ -200,15 +212,17 @@ logger.info('User logged in', { userId: 123, action: 'login' });
 ### Child Logger Migration
 
 **Pino:**
+
 ```typescript
 const child = logger.child({ module: 'auth' });
 child.info('Processing authentication');
 ```
 
 **JellyLogger:**
+
 ```typescript
-const child = logger.child({ 
-  context: { module: 'auth' }
+const child = logger.child({
+  context: { module: 'auth' },
 });
 child.info('Processing authentication');
 ```
@@ -216,17 +230,19 @@ child.info('Processing authentication');
 ### Serializers Migration
 
 **Pino:**
+
 ```typescript
 const logger = pino({
   serializers: {
     req: pino.stdSerializers.req,
     res: pino.stdSerializers.res,
-    err: pino.stdSerializers.err
-  }
+    err: pino.stdSerializers.err,
+  },
 });
 ```
 
 **JellyLogger:**
+
 ```typescript
 // Built-in error serialization
 logger.error('Request failed', new Error('Connection timeout'));
@@ -239,12 +255,12 @@ logger.setOptions({
         return {
           name: value.name,
           message: value.message,
-          stack: value.stack
+          stack: value.stack,
         };
       }
       return value;
-    }
-  }
+    },
+  },
 });
 ```
 
@@ -257,58 +273,56 @@ Bunyan is another popular structured logger:
 ### Basic Setup Migration
 
 **Bunyan:**
+
 ```typescript
 import bunyan from 'bunyan';
 
 const logger = bunyan.createLogger({
   name: 'myapp',
   level: 'info',
-  streams: [
-    { stream: process.stdout },
-    { path: '/var/log/myapp.log' }
-  ]
+  streams: [{ stream: process.stdout }, { path: '/var/log/myapp.log' }],
 });
 ```
 
 **JellyLogger:**
+
 ```typescript
-import { logger, LogLevel, FileTransport, ConsoleTransport } from "jellylogger";
+import { logger, LogLevel, FileTransport, ConsoleTransport } from 'jellylogger';
 
 logger.setOptions({
   level: LogLevel.INFO,
-  transports: [
-    new ConsoleTransport(),
-    new FileTransport('/var/log/myapp.log')
-  ]
+  transports: [new ConsoleTransport(), new FileTransport('/var/log/myapp.log')],
 });
 ```
 
 ### Log Level Mapping
 
-| Bunyan | JellyLogger | Notes |
-|--------|-------------|-------|
-| `fatal` | `fatal` | Direct mapping |
-| `error` | `error` | Direct mapping |
-| `warn` | `warn` | Direct mapping |
-| `info` | `info` | Direct mapping |
-| `debug` | `debug` | Direct mapping |
-| `trace` | `trace` | Direct mapping |
+| Bunyan  | JellyLogger | Notes          |
+| ------- | ----------- | -------------- |
+| `fatal` | `fatal`     | Direct mapping |
+| `error` | `error`     | Direct mapping |
+| `warn`  | `warn`      | Direct mapping |
+| `info`  | `info`      | Direct mapping |
+| `debug` | `debug`     | Direct mapping |
+| `trace` | `trace`     | Direct mapping |
 
 ### Child Logger Migration
 
 **Bunyan:**
+
 ```typescript
 const childLogger = logger.child({
-  widget_type: 'wid-47'
+  widget_type: 'wid-47',
 });
 ```
 
 **JellyLogger:**
+
 ```typescript
 const childLogger = logger.child({
   context: {
-    widget_type: 'wid-47'
-  }
+    widget_type: 'wid-47',
+  },
 });
 ```
 
@@ -321,6 +335,7 @@ Moving from basic console logging to structured logging:
 ### Basic Migration
 
 **console.log:**
+
 ```typescript
 console.log('User logged in:', username);
 console.error('Database error:', error.message);
@@ -328,8 +343,9 @@ console.warn('Memory usage high:', usage);
 ```
 
 **JellyLogger:**
+
 ```typescript
-import { logger } from "jellylogger";
+import { logger } from 'jellylogger';
 
 logger.info('User logged in', { username });
 logger.error('Database error', { error: error.message });
@@ -339,6 +355,7 @@ logger.warn('Memory usage high', { usage });
 ### Development vs Production
 
 **Before:**
+
 ```typescript
 if (process.env.NODE_ENV === 'development') {
   console.log('Debug info:', data);
@@ -346,12 +363,11 @@ if (process.env.NODE_ENV === 'development') {
 ```
 
 **After:**
+
 ```typescript
 // Automatically handled by log levels
 logger.setOptions({
-  level: process.env.NODE_ENV === 'development' 
-    ? LogLevel.DEBUG 
-    : LogLevel.INFO
+  level: process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO,
 });
 
 logger.debug('Debug info', { data });
@@ -360,6 +376,7 @@ logger.debug('Debug info', { data });
 ### Error Handling Migration
 
 **Before:**
+
 ```typescript
 try {
   await processData();
@@ -369,14 +386,15 @@ try {
 ```
 
 **After:**
+
 ```typescript
 try {
   await processData();
 } catch (error) {
-  logger.error('Process failed', { 
+  logger.error('Process failed', {
     error: error.message,
     stack: error.stack,
-    operation: 'processData'
+    operation: 'processData',
   });
 }
 ```
@@ -390,84 +408,90 @@ try {
 #### Breaking Changes
 
 1. **Formatter API Changed:**
+
    ```typescript
    // v1.x
    logger.setOptions({
-     format: 'json'
+     format: 'json',
    });
 
    // v2.x
    logger.setOptions({
-     pluggableFormatter: createFormatter("ndjson")
+     pluggableFormatter: createFormatter('ndjson'),
    });
    ```
 
 2. **Transport Constructor Changes:**
+
    ```typescript
    // v1.x
-   new FileTransport("app.log", { maxSize: "10MB" });
+   new FileTransport('app.log', { maxSize: '10MB' });
 
    // v2.x
-   new FileTransport("app.log", { maxFileSize: 10 * 1024 * 1024 });
+   new FileTransport('app.log', { maxFileSize: 10 * 1024 * 1024 });
    ```
 
 3. **Redaction API Enhanced:**
+
    ```typescript
    // v1.x - Basic redaction
    logger.setOptions({
      redaction: {
-       keys: ["password"]
-     }
+       keys: ['password'],
+     },
    });
 
    // v2.x - Enhanced redaction
    logger.setOptions({
      redaction: {
-       keys: ["password"],
+       keys: ['password'],
        fieldConfigs: {
-         "user.email": {
-           replacement: "[EMAIL_REDACTED]"
-         }
+         'user.email': {
+           replacement: '[EMAIL_REDACTED]',
+         },
        },
        customRedactor: (value, context) => {
          // Custom logic
          return value;
-       }
-     }
+       },
+     },
    });
    ```
 
 #### Migration Steps
 
 1. **Update Dependencies:**
+
    ```bash
    bun remove jellylogger
    bun add jellylogger@latest
    ```
 
 2. **Update Formatter Usage:**
+
    ```typescript
    // Replace old format options
    logger.setOptions({
-     pluggableFormatter: createFormatter("ndjson")
+     pluggableFormatter: createFormatter('ndjson'),
    });
    ```
 
 3. **Update File Transport Config:**
+
    ```typescript
    // Convert size strings to bytes
-   const transport = new FileTransport("app.log", {
+   const transport = new FileTransport('app.log', {
      maxFileSize: 50 * 1024 * 1024, // 50MB in bytes
      maxFiles: 10,
      compress: true,
-     dateRotation: true
+     dateRotation: true,
    });
    ```
 
 4. **Test Redaction Rules:**
    ```typescript
    // Verify redaction still works as expected
-   logger.info("Test", { password: "secret" });
+   logger.info('Test', { password: 'secret' });
    // Should output with password redacted
    ```
 
@@ -478,34 +502,36 @@ try {
 ### Environment-Based Configuration
 
 **Old approach (various libraries):**
+
 ```typescript
 const config = {
   development: {
     level: 'debug',
     colorize: true,
-    prettyPrint: true
+    prettyPrint: true,
   },
   production: {
     level: 'info',
     json: true,
-    file: '/var/log/app.log'
-  }
+    file: '/var/log/app.log',
+  },
 };
 
 const logger = createLogger(config[process.env.NODE_ENV]);
 ```
 
 **JellyLogger approach:**
+
 ```typescript
 function configureLogger() {
   const env = process.env.NODE_ENV || 'development';
-  
+
   const baseConfig: Partial<LoggerOptions> = {
     useHumanReadableTime: true,
     redaction: {
-      keys: ["password", "token", "secret", "apiKey"],
-      stringPatterns: [/Bearer\s+[\w-]+/gi]
-    }
+      keys: ['password', 'token', 'secret', 'apiKey'],
+      stringPatterns: [/Bearer\s+[\w-]+/gi],
+    },
   };
 
   switch (env) {
@@ -514,7 +540,7 @@ function configureLogger() {
         ...baseConfig,
         level: LogLevel.DEBUG,
         transports: [new ConsoleTransport()],
-        pluggableFormatter: createFormatter("default")
+        pluggableFormatter: createFormatter('default'),
       });
       break;
 
@@ -522,8 +548,8 @@ function configureLogger() {
       logger.setOptions({
         ...baseConfig,
         level: LogLevel.WARN,
-        transports: [new FileTransport("./test.log")],
-        pluggableFormatter: createFormatter("ndjson")
+        transports: [new FileTransport('./test.log')],
+        pluggableFormatter: createFormatter('ndjson'),
       });
       break;
 
@@ -533,14 +559,14 @@ function configureLogger() {
         level: LogLevel.INFO,
         transports: [
           new ConsoleTransport(),
-          new FileTransport("/var/log/app.log", {
+          new FileTransport('/var/log/app.log', {
             maxFileSize: 100 * 1024 * 1024,
             maxFiles: 30,
             compress: true,
-            dateRotation: true
-          })
+            dateRotation: true,
+          }),
         ],
-        pluggableFormatter: createFormatter("ndjson")
+        pluggableFormatter: createFormatter('ndjson'),
       });
       break;
   }
@@ -556,11 +582,13 @@ configureLogger();
 ### 1. Express.js Middleware
 
 **Before (various loggers):**
+
 ```typescript
 app.use(morgan('combined'));
 ```
 
 **After (JellyLogger):**
+
 ```typescript
 app.use((req, res, next) => {
   const start = Date.now();
@@ -570,18 +598,18 @@ app.use((req, res, next) => {
       method: req.method,
       url: req.url,
       userAgent: req.headers['user-agent'],
-      ip: req.ip
-    }
+      ip: req.ip,
+    },
   });
 
   req.logger = requestLogger;
-  requestLogger.info("Request started");
+  requestLogger.info('Request started');
 
   res.on('finish', () => {
     const duration = Date.now() - start;
-    requestLogger.info("Request completed", {
+    requestLogger.info('Request completed', {
       statusCode: res.statusCode,
-      duration: `${duration}ms`
+      duration: `${duration}ms`,
     });
   });
 
@@ -592,22 +620,24 @@ app.use((req, res, next) => {
 ### 2. Error Handling
 
 **Before:**
+
 ```typescript
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', err => {
   console.error('Uncaught Exception:', err);
   process.exit(1);
 });
 ```
 
 **After:**
+
 ```typescript
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', err => {
   logger.fatal('Uncaught Exception', {
     error: err.message,
     stack: err.stack,
-    type: 'uncaughtException'
+    type: 'uncaughtException',
   });
-  
+
   // Flush logs before exit
   logger.flushAll().finally(() => {
     process.exit(1);
@@ -618,19 +648,21 @@ process.on('uncaughtException', (err) => {
 ### 3. Database Query Logging
 
 **Before:**
+
 ```typescript
 console.log(`Executing query: ${sql}`);
 ```
 
 **After:**
+
 ```typescript
-const dbLogger = logger.child({ messagePrefix: "DB" });
+const dbLogger = logger.child({ messagePrefix: 'DB' });
 
 function logQuery(sql: string, params?: any[], duration?: number) {
-  dbLogger.debug("SQL Query", {
+  dbLogger.debug('SQL Query', {
     sql: sanitizeSQL(sql),
     paramCount: params?.length || 0,
-    duration: duration ? `${duration}ms` : undefined
+    duration: duration ? `${duration}ms` : undefined,
   });
 }
 ```
@@ -644,16 +676,17 @@ function logQuery(sql: string, params?: any[], duration?: number) {
 #### 1. Performance Differences
 
 **Issue:** JellyLogger seems slower than previous logger
-**Solution:** 
+**Solution:**
+
 ```typescript
 // Optimize for production
 logger.setOptions({
   level: LogLevel.INFO, // Disable debug/trace in production
-  pluggableFormatter: createFormatter("ndjson"), // Use JSON for speed
+  pluggableFormatter: createFormatter('ndjson'), // Use JSON for speed
   redaction: {
     // Minimize redaction rules in hot paths
-    keys: ["password", "token"]
-  }
+    keys: ['password', 'token'],
+  },
 });
 ```
 
@@ -661,13 +694,14 @@ logger.setOptions({
 
 **Issue:** Log files not rotating as expected
 **Solution:**
+
 ```typescript
 // Ensure proper rotation configuration
-const transport = new FileTransport("app.log", {
+const transport = new FileTransport('app.log', {
   maxFileSize: 50 * 1024 * 1024, // 50MB in bytes, not string
   maxFiles: 10,
   compress: true,
-  dateRotation: true // Enable if you want daily rotation
+  dateRotation: true, // Enable if you want daily rotation
 });
 ```
 
@@ -675,10 +709,11 @@ const transport = new FileTransport("app.log", {
 
 **Issue:** Some logs not appearing
 **Solution:**
+
 ```typescript
 // Check log level configuration
 logger.setOptions({
-  level: LogLevel.DEBUG // Ensure level is low enough
+  level: LogLevel.DEBUG, // Ensure level is low enough
 });
 
 // Ensure flush before exit
@@ -691,6 +726,7 @@ process.on('exit', async () => {
 
 **Issue:** Log format looks different from previous logger
 **Solution:**
+
 ```typescript
 // Create custom formatter to match old format
 class LegacyFormatter implements LogFormatter {
@@ -701,7 +737,7 @@ class LegacyFormatter implements LogFormatter {
 }
 
 logger.setOptions({
-  pluggableFormatter: new LegacyFormatter()
+  pluggableFormatter: new LegacyFormatter(),
 });
 ```
 
