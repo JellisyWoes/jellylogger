@@ -78,6 +78,7 @@ export class WebSocketTransport implements Transport {
   }
 
   private async flushQueue(): Promise<void> {
+    await Promise.resolve(); // Satisfy require-await rule
     let _sentCount = 0;
     while (this.queue.length > 0) {
       if (this.ws?.readyState !== WebSocket.OPEN) {

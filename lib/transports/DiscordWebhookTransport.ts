@@ -1,5 +1,11 @@
 import { LogLevel } from '../core/constants';
-import type { LogEntry, LoggerOptions, Transport, TransportOptions } from '../core/types';
+import type {
+  LogEntry,
+  LoggerOptions,
+  RedactionConfig,
+  Transport,
+  TransportOptions,
+} from '../core/types';
 import { DEFAULT_FORMATTER } from '../formatters';
 import { getRedactedEntry } from '../redaction';
 import { safeJsonStringify, safeStringify } from '../utils/serialization';
@@ -56,7 +62,11 @@ export class DiscordWebhookTransport implements Transport {
 
   async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
     // Fallback to empty object if options is undefined
-    const redactedEntry = getRedactedEntry(entry, (options as any)?.redaction, 'console');
+    const redactionConfig =
+      options && 'redaction' in options
+        ? (options.redaction as RedactionConfig | undefined)
+        : undefined;
+    const redactedEntry = getRedactedEntry(entry, redactionConfig, 'console');
     this.queue.push(redactedEntry);
     this.timer ??= setTimeout(() => void this.flush(options), this.batchIntervalMs);
     if (this.queue.length >= this.maxBatchSize) {
@@ -88,7 +98,7 @@ export class DiscordWebhookTransport implements Transport {
       useHumanReadableTime: false,
       transports: [],
       format: 'string',
-      ...((options as any) ?? {}),
+      ...(options ?? {}),
     };
 
     try {

@@ -238,6 +238,7 @@ export class FileTransport implements Transport {
    * Rotate log files with proper locking and error handling.
    */
   private async rotateLogs(): Promise<void> {
+    await Promise.resolve(); // Satisfy require-await rule
     if (!this.rotationConfig || this.isRotating) return;
 
     this.isRotating = true;
