@@ -47,7 +47,7 @@ export interface RedactionAuditEvent {
  */
 export interface FieldRedactionConfig {
   /** Specific replacement for this field/path */
-  replacement?: string | ((value: any, context: RedactionContext) => string);
+  replacement?: string | ((value: unknown, context: RedactionContext) => string);
   /** Custom redaction function for this field/path */
   customRedactor?: CustomRedactor;
   /** Whether to disable redaction for this specific field/path */
@@ -89,7 +89,7 @@ export interface RedactionConfig {
   customRedactor?: CustomRedactor;
 
   /** Replacement text for redacted values or a function for custom replacement. Default: '[REDACTED]' */
-  replacement?: string | ((value: any, context: RedactionContext) => string);
+  replacement?: string | ((value: unknown, context: RedactionContext) => string);
 
   /** Whether to perform case-insensitive key matching. Default: true */
   caseInsensitive?: boolean;

@@ -1,3 +1,4 @@
+import type { LogEntry } from '../core/types';
 import { isPrimitive, isRecord, mightHaveCircularRefs } from '../utils/typeGuards';
 import type {
   FieldRedactionConfig,
@@ -5,7 +6,6 @@ import type {
   RedactionConfig,
   RedactionContext,
 } from './config';
-import type { LogEntry } from '../core/types';
 import { isWhitelisted, redactString, shouldRedactKey, shouldRedactValue } from './patterns';
 
 /**
@@ -449,7 +449,7 @@ export function redactLogEntry(
       continue;
     }
 
-    const fieldValue = (entry as any)[field]; // Original field value
+    const fieldValue = (entry as unknown as Record<string, unknown>)[field]; // Original field value
 
     // Base context for operations related to this top-level field
     const baseFieldContext: Pick<RedactionContext, 'field' | 'target'> = {
@@ -476,7 +476,7 @@ export function redactLogEntry(
             config,
             'string pattern match',
           );
-          (newEntry as any)[field] = redactedMessage;
+          (newEntry as unknown as Record<string, unknown>)[field] = redactedMessage;
         }
       } else if (
         field === 'args' &&
@@ -511,34 +511,36 @@ export function redactLogEntry(
           return redactObject(arg, config, contextForRedactObject, new WeakSet(), 0);
         });
 
-        (newEntry as any)[field] = {
+        (newEntry as unknown as Record<string, unknown>)[field] = {
           ...argsObj,
           processedArgs: redactedProcessedArgs,
         };
       } else if (field === 'args' && Array.isArray(fieldValue)) {
         // Legacy support for old args structure (array)
-        (newEntry as any)[field] = fieldValue.map((arg, index) => {
-          if (typeof arg === 'string' && config.redactStrings) {
-            const stringRedactionContext: RedactionContext = {
-              field: 'args',
-              key: `[${index}]`,
-              path: `args[${index}]`, // Full path for audit/context
-              originalValue: arg,
+        (newEntry as unknown as Record<string, unknown>)[field] = (fieldValue as unknown[]).map(
+          (arg, index) => {
+            if (typeof arg === 'string' && config.redactStrings) {
+              const stringRedactionContext: RedactionContext = {
+                field: 'args',
+                key: `[${index}]`,
+                path: `args[${index}]`, // Full path for audit/context
+                originalValue: arg,
+                target: baseFieldContext.target,
+              };
+              return redactString(arg, config, stringRedactionContext);
+            }
+
+            // For redactObject, the 'path' it operates on starts relative to 'arg'.
+            // The 'key' it receives in its context is its identifier in the parent (args array).
+            const contextForRedactObject: Partial<RedactionContext> = {
+              field: 'args', // Top-level field name
+              path: '', // Path is relative to 'arg' itself for internal matching
+              key: `[${index}]`, // Key of this item in the args array
               target: baseFieldContext.target,
             };
-            return redactString(arg, config, stringRedactionContext);
-          }
-
-          // For redactObject, the 'path' it operates on starts relative to 'arg'.
-          // The 'key' it receives in its context is its identifier in the parent (args array).
-          const contextForRedactObject: Partial<RedactionContext> = {
-            field: 'args', // Top-level field name
-            path: '', // Path is relative to 'arg' itself for internal matching
-            key: `[${index}]`, // Key of this item in the args array
-            target: baseFieldContext.target,
-          };
-          return redactObject(arg, config, contextForRedactObject, new WeakSet(), 0);
-        });
+            return redactObject(arg, config, contextForRedactObject, new WeakSet(), 0);
+          },
+        );
       } else {
         // Handle other fields (e.g., 'data', custom structured fields, or even primitives if targeted)
         // The path for redactObject will be relative to 'fieldValue'.
@@ -548,7 +550,7 @@ export function redactLogEntry(
           path: '', // Path for redactObject starts empty, relative to 'fieldValue'
           key: field, // Key of this field in the log entry (e.g., "data")
         };
-        (newEntry as any)[field] = redactObject(
+        (newEntry as unknown as Record<string, unknown>)[field] = redactObject(
           fieldValue,
           config,
           objectFieldContext,
@@ -558,7 +560,7 @@ export function redactLogEntry(
       }
     } catch (error) {
       console.warn(`[REDACTION] Error processing field '${field}':`, error);
-      (newEntry as any)[field] = fieldValue; // Keep original on error for this field
+      (newEntry as unknown as Record<string, unknown>)[field] = fieldValue; // Keep original on error for this field
     }
   }
 
@@ -580,4 +582,4 @@ export function getRedactedEntry(
 }
 
 // Re-export pattern functions
-export { shouldRedactKey, shouldRedactValue, redactString, isWhitelisted };
+export { isWhitelisted, redactString, shouldRedactKey, shouldRedactValue };

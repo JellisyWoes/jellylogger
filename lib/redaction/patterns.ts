@@ -140,16 +140,14 @@ export function isWhitelisted(keyPath: string, key: string, config: RedactionCon
 /**
  * Checks if a value matches any of the value patterns for redaction.
  */
-export function shouldRedactValue(value: any, config: RedactionConfig): boolean {
+export function shouldRedactValue(value: unknown, config: RedactionConfig): boolean {
   if (!config.valuePatterns || config.valuePatterns.length === 0) {
     return false;
   }
-
   // Only check string values for value patterns
   if (typeof value !== 'string') {
     return false;
   }
-
   return config.valuePatterns.some(pattern => pattern.test(value));
 }
 
@@ -172,7 +170,7 @@ export function redactString(
       // For function replacements, we need to call the function for each match
       result = result.replace(pattern, match => {
         const ctx = context ?? { key: '', path: '', field: '', originalValue: match };
-        return (config.replacement as (value: any, context: RedactionContext) => string)(
+        return (config.replacement as (value: unknown, context: RedactionContext) => string)(
           match,
           ctx,
         );
