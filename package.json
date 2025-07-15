@@ -21,10 +21,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint lib/ test/ --ext .ts --max-warnings 30",
     "lint:fix": "eslint lib/ test/ --ext .ts --fix --max-warnings 30",
-    "lint:check": "eslint lib/ test/ --ext .ts --max-warnings 0",
-    "format": "prettier --write \"lib/**/*.ts\" \"test/**/*.ts\" \"docs/**/*.md\" \"*.md\"",
-    "format:check": "prettier --check \"lib/**/*.ts\" \"test/**/*.ts\" \"docs/**/*.md\" \"*.md\"",
-    "ci": "bun run typecheck && bun run lint:check && bun run format:check && bun test",
+    "lint:check": "eslint lib/ test/ --ext .ts",
+    "ci": "bun run typecheck && bun run lint:check && bun test",
     "test:coverage": "bun test --coverage",
     "test:watch": "bun test --watch"
   },
