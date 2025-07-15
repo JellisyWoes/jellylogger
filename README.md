@@ -1,18 +1,27 @@
-# JellyLogger
+<div align="center">
+  <h1>JellyLogger</h1>
+  <p>
+    A fast, flexible logging library built specifically for the <a href="https://bun.sh/">Bun</a> runtime.<br>
+    JellyLogger provides structured logging with multiple transports, automatic redaction, and TypeScript-first design.
+  </p>
+  <p>
+    <a href="https://www.npmjs.com/package/jellylogger"><img src="https://badge.fury.io/js/jellylogger.svg" alt="npm version"></a>
+    <a href="https://www.npmjs.com/package/jellylogger"><img src="https://img.shields.io/npm/dm/jellylogger" alt="npm downloads"></a>
+    <a href="https://bundlephobia.com/package/jellylogger"><img src="https://img.shields.io/bundlephobia/min/jellylogger" alt="npm bundle size"></a>
+    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+    <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8.3-blue.svg" alt="TypeScript"></a>
+    <a href="https://bun.sh/"><img src="https://img.shields.io/badge/Bun-1.2.11+-ff69b4.svg" alt="Bun"></a>
+    <a href="https://github.com/JellisyWoes/jellylogger/stargazers"><img src="https://img.shields.io/github/stars/JellisyWoes/jellylogger?style=social" alt="GitHub stars"></a>
+    <a href="https://github.com/JellisyWoes/jellylogger/issues"><img src="https://img.shields.io/github/issues/JellisyWoes/jellylogger" alt="GitHub issues"></a>
+    <a href="https://github.com/JellisyWoes/jellylogger/commits/main"><img src="https://img.shields.io/github/last-commit/JellisyWoes/jellylogger" alt="GitHub last commit"></a>
+  </p>
+</div>
 
-A fast, flexible logging library built specifically for the [Bun](https://bun.sh/) runtime. JellyLogger provides structured logging with multiple transports, automatic redaction, and TypeScript-first design.
+<hr>
 
-[![npm version](https://badge.fury.io/js/jellylogger.svg)](https://www.npmjs.com/package/jellylogger)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-blue.svg)](https://www.typescriptlang.org/)
-[![Bun](https://img.shields.io/badge/Bun-1.2.14+-ff69b4.svg)](https://bun.sh/)
-[![GitHub stars](https://img.shields.io/github/stars/JellisyWoes/jellylogger?style=social)](https://github.com/JellisyWoes/jellylogger/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/JellisyWoes/jellylogger)](https://github.com/JellisyWoes/jellylogger/issues)
-[![GitHub last commit](https://img.shields.io/github/last-commit/JellisyWoes/jellylogger)](https://github.com/JellisyWoes/jellylogger/commits/main)
-[![npm downloads](https://img.shields.io/npm/dm/jellylogger)](https://www.npmjs.com/package/jellylogger)
-[![Bundle size](https://img.shields.io/bundlephobia/minzip/jellylogger)](https://bundlephobia.com/package/jellylogger)
+<a id="features"></a>
 
-## ✨ Features
+<h2>✨ Features</h2>
 
 - 🚀 **Bun-Optimized**: Built specifically for Bun runtime with native API integration
 - 🔌 **Multiple Transports**: Console, File, Discord Webhook, and WebSocket support
@@ -25,13 +34,17 @@ A fast, flexible logging library built specifically for the [Bun](https://bun.sh
 - ⚡ **High Performance**: Optimized for speed and memory efficiency
 - 🔧 **Extensible**: Plugin architecture for custom transports and formatters
 
-## 📦 Installation
+<hr>
+<a id="installation"></a>
+<h2>📦 Installation</h2>
 
 ```bash
 bun add jellylogger
 ```
 
-## 🚀 Quick Start
+<hr>
+<a id="quickstart"></a>
+<h2>🚀 Quick Start</h2>
 
 ```typescript
 import { logger } from 'jellylogger';
@@ -56,7 +69,9 @@ logger.error('Error occurred');
 logger.fatal('Critical system error');
 ```
 
-## 📝 Log Levels
+<hr>
+<a id="loglevels"></a>
+<h2>📝 Log Levels</h2>
 
 JellyLogger supports 7 log levels (0-6):
 
@@ -72,7 +87,9 @@ LogLevel.DEBUG; // 5 - Debug info
 LogLevel.TRACE; // 6 - Detailed tracing
 ```
 
-## 🎯 Multiple Transports
+<hr>
+<a id="transports"></a>
+<h2>🎯 Multiple Transports</h2>
 
 ### Console Transport (Default)
 
@@ -130,7 +147,9 @@ useConsoleFileAndDiscord('app.log', 'https://discord.com/api/webhooks/...');
 useAllTransports('app.log', 'https://discord.com/api/webhooks/...', 'ws://localhost:8080/logs');
 ```
 
-## 🎨 Formatters
+<hr>
+<a id="formatters"></a>
+<h2>🎨 Formatters</h2>
 
 ### Built-in Formatters
 
@@ -167,7 +186,9 @@ class CustomFormatter implements LogFormatter {
 logger.setOptions({ format: new CustomFormatter() });
 ```
 
-## 🔒 Data Redaction
+<hr>
+<a id="redaction"></a>
+<h2>🔒 Data Redaction</h2>
 
 ### Basic Redaction
 
@@ -244,7 +265,9 @@ logger.setOptions({
 });
 ```
 
-## 👶 Child Loggers
+<hr>
+<a id="childloggers"></a>
+<h2>👶 Child Loggers</h2>
 
 Create contextual loggers that inherit parent configuration:
 
@@ -269,7 +292,9 @@ moduleLogger.warn('Invalid token');
 // [REQUEST] [AUTH] Invalid token
 ```
 
-## ⚙️ Configuration
+<hr>
+<a id="configuration"></a>
+<h2>⚙️ Configuration</h2>
 
 ### Global Logger Options
 
@@ -306,7 +331,9 @@ const fileTransport = new FileTransport('app.log', {
 logger.addTransport(fileTransport);
 ```
 
-## 🔄 File Rotation
+<hr>
+<a id="filerotation"></a>
+<h2>🔄 File Rotation</h2>
 
 Automatic log rotation with flexible configuration:
 
@@ -322,7 +349,9 @@ const transport = new FileTransport('logs/app.log', {
 });
 ```
 
-## 🔌 Creating Custom Transports
+<hr>
+<a id="customtransports"></a>
+<h2>🔌 Creating Custom Transports</h2>
 
 ```typescript
 import type { Transport, LogEntry, TransportOptions } from 'jellylogger';
@@ -350,7 +379,9 @@ class DatabaseTransport implements Transport {
 logger.addTransport(new DatabaseTransport());
 ```
 
-## 🧪 Testing
+<hr>
+<a id="testing"></a>
+<h2>🧪 Testing</h2>
 
 JellyLogger includes comprehensive test utilities:
 
@@ -371,7 +402,9 @@ expect(memoryTransport.logs).toHaveLength(1);
 expect(memoryTransport.logs[0].message).toBe('test message');
 ```
 
-## 📚 Documentation
+<hr>
+<a id="documentation"></a>
+<h2>📚 Documentation</h2>
 
 - [Usage Guide](./docs/usage.md) - Comprehensive usage examples
 - [API Reference](./docs/api.md) - Complete API documentation
@@ -379,7 +412,9 @@ expect(memoryTransport.logs[0].message).toBe('test message');
 - [Migration Guide](./docs/migration.md) - Upgrading from other loggers
 - [Linting & Code Quality](./docs/linting.md) - Development workflow and code standards
 
-## 🤝 Contributing
+<hr>
+<a id="contributing"></a>
+<h2>🤝 Contributing</h2>
 
 We welcome contributions! Please see our [Contributing Guide](./CONTRIBUTING.md) for details.
 
@@ -390,11 +425,15 @@ We welcome contributions! Please see our [Contributing Guide](./CONTRIBUTING.md)
 5. Push to the branch (`git push origin feature/amazing-feature`)
 6. Open a Pull Request
 
-## 📄 License
+<hr>
+<a id="license"></a>
+<h2>📄 License</h2>
 
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
 
-## 🙏 Acknowledgments
+<hr>
+<a id="acknowledgments"></a>
+<h2>🙏 Acknowledgments</h2>
 
 - Built for the [Bun](https://bun.sh/) runtime
 - Inspired by popular logging libraries like Winston, Pino, and Bunyan
@@ -402,4 +441,4 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 ---
 
-**Made with ❤️ for the Bun ecosystem**
+<p align="center"><b>Made with ❤️ for the Bun ecosystem</b></p>
