@@ -125,7 +125,7 @@ export interface RedactionConfig {
       replacement?:
         | string
         | ((
-            value: any,
+            value: unknown,
             context: {
               key: string;
               path: string;
@@ -166,7 +166,7 @@ export interface RedactionConfig {
   replacement?:
     | string
     | ((
-        value: any,
+        value: unknown,
         context: {
           key: string;
           path: string;

@@ -6,6 +6,7 @@ import type {
   ChildLoggerOptions,
   LogEntry,
   LoggerOptions,
+  Transport,
   TransportOptions,
 } from './types';
 
@@ -29,7 +30,12 @@ export class ChildLogger implements BaseLogger {
 
   private log(level: LogLevel, message: string, ...optionalParams: unknown[]): void {
     const prefixedMessage = this.createPrefixedMessage(message);
-    (this.parent as any).log(level, prefixedMessage, ...optionalParams);
+    // Cast to BaseLogger with log method for type safety
+    (
+      this.parent as BaseLogger & {
+        log: (level: LogLevel, message: string, ...args: unknown[]) => void;
+      }
+    ).log(level, prefixedMessage, ...optionalParams);
   }
 
   fatal(message: string, ...optionalParams: unknown[]): void {
@@ -94,10 +100,10 @@ interface IJellyLogger extends BaseLogger {
     data?: Record<string, unknown>,
     ...args: unknown[]
   ): void;
-  addTransport(transport: any): void;
-  removeTransport(transport: any): void;
+  addTransport(transport: Transport): void;
+  removeTransport(transport: Transport): void;
   clearTransports(): void;
-  setTransports(transports: any[]): void;
+  setTransports(transports: Transport[]): void;
 }
 
 class JellyLoggerImpl implements IJellyLogger {
@@ -219,12 +225,12 @@ class JellyLoggerImpl implements IJellyLogger {
   }
 
   // Transport management methods
-  addTransport(transport: any): void {
+  addTransport(transport: Transport): void {
     this.options.transports ??= [];
     this.options.transports.push(transport);
   }
 
-  removeTransport(transport: any): void {
+  removeTransport(transport: Transport): void {
     if (!this.options.transports) {
       return;
     }
@@ -238,7 +244,7 @@ class JellyLoggerImpl implements IJellyLogger {
     this.options.transports = [];
   }
 
-  setTransports(transports: any[]): void {
+  setTransports(transports: Transport[]): void {
     this.options.transports = [...transports];
   }
 
