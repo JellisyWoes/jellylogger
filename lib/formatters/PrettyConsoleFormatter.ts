@@ -1,13 +1,13 @@
-import type { CustomConsoleColors, LogEntry } from '../core/types';
-import type { LogFormatter } from './LogFormatter';
 import { LogLevel } from '../core/constants';
-import { safeStringify } from '../utils/serialization';
+import type { CustomConsoleColors, LogEntry } from '../core/types';
 import {
   colorizeLevelText,
   dimText,
   type FormatterColors,
   getConsistentFormatterColors,
 } from '../utils/formatterColors';
+import { safeStringify } from '../utils/serialization';
+import type { LogFormatter } from './LogFormatter';
 
 /**
  * Pretty Console Formatter that formats log entries across multiple lines
@@ -152,11 +152,11 @@ export class PrettyConsoleFormatter implements LogFormatter {
         const typeIndicator = useColors ? dimText(`[${valueType}]`, colors) : `[${valueType}]`;
 
         if (typeof value === 'object' && value !== null) {
-          const keyLabel = useColors ? this.colorizeKey(key, colors!) : key;
+          const keyLabel = useColors && colors ? this.colorizeKey(key, colors) : key;
           lines.push(`${childIndent}${keyLabel}: ${typeIndicator}`);
           lines.push(this.formatObject(value, indentLevel + 2, useColors, colors));
         } else {
-          const keyLabel = useColors ? this.colorizeKey(key, colors!) : key;
+          const keyLabel = useColors && colors ? this.colorizeKey(key, colors) : key;
           const stringValue = safeStringify(value);
 
           // Handle long values by wrapping them
@@ -202,7 +202,7 @@ export class PrettyConsoleFormatter implements LogFormatter {
         return 'error';
       }
 
-      const constructor = (value as any).constructor?.name;
+      const constructor = (value as { constructor?: { name?: string } }).constructor?.name;
       if (constructor && constructor !== 'Object') {
         return constructor.toLowerCase();
       }
