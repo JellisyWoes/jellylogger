@@ -18,7 +18,7 @@ A fast, flexible logging library built specifically for the [Bun](https://bun.sh
 - 🔌 **Multiple Transports**: Console, File, Discord Webhook, and WebSocket support
 - 🎨 **Flexible Formatters**: JSON, Logfmt, NDJSON, and custom formatters
 - 🔒 **Advanced Redaction**: Comprehensive data protection with patterns and field-specific rules
-- 👶 **Child Loggers**: Context inheritance with prefix and data merging
+- 👶 **Child Loggers**: Context inheritance with message prefixes
 - 🔄 **File Rotation**: Automatic log rotation with compression and date-based naming
 - 📊 **Structured Logging**: Rich metadata and context support
 - 🎯 **TypeScript-First**: Full type safety with extensive type definitions
@@ -250,21 +250,23 @@ Create contextual loggers that inherit parent configuration:
 
 ```typescript
 // Create child logger with prefix
-const userLogger = logger.child('USER');
+const userLogger = logger.child({ messagePrefix: 'USER' });
 userLogger.info('Login successful'); // [USER] Login successful
 
-// Child logger with data context
+// Child logger with data context (passed with each log)
 const requestLogger = logger.child({
-  data: { requestId: 'req-123', userId: 'user-456' },
+  messagePrefix: 'REQUEST',
 });
 
-requestLogger.info('Processing request');
-// Includes requestId and userId in all logs
+requestLogger.info('Processing request', {
+  requestId: 'req-123',
+  userId: 'user-456',
+});
 
 // Nested child loggers
-const moduleLogger = requestLogger.child('AUTH');
+const moduleLogger = requestLogger.child({ messagePrefix: 'AUTH' });
 moduleLogger.warn('Invalid token');
-// [AUTH] Invalid token (with inherited context)
+// [REQUEST] [AUTH] Invalid token
 ```
 
 ## ⚙️ Configuration

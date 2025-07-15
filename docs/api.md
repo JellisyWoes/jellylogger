@@ -149,17 +149,16 @@ await logger.flushAll();
 logger.child(options?: ChildLoggerOptions): ChildLogger
 ```
 
-Creates a child logger that inherits the parent's configuration but can have its own context.
+Creates a child logger that inherits the parent's configuration with message prefixes.
 
 **Example:**
 
 ```typescript
 const userLogger = logger.child({
   messagePrefix: 'USER',
-  context: { userId: '123' },
 });
 
-userLogger.info('Profile updated'); // [USER] Profile updated
+userLogger.info('Profile updated', { userId: '123' }); // [USER] Profile updated
 ```
 
 ---
@@ -217,8 +216,8 @@ Configuration for child loggers.
 ```typescript
 interface ChildLoggerOptions {
   messagePrefix?: string; // Prefix for all messages
-  defaultData?: Record<string, unknown>; // Default data context
-  context?: Record<string, unknown>; // Alias for defaultData
+  // Note: defaultData and context are not currently implemented
+  // Context data must be passed explicitly with each log call
 }
 ```
 

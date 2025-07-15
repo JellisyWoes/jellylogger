@@ -217,24 +217,28 @@ authLogger.error('Invalid credentials');
 
 ### Context-Based Child Loggers
 
+**Note**: The current implementation only supports `messagePrefix` for child loggers. Context data must be passed explicitly with each log call.
+
 ```typescript
-// Child logger with data context
+// Child logger with message prefix only
 const requestLogger = logger.child({
-  context: {
-    requestId: 'req-123',
-    userId: 'user-456',
-  },
+  messagePrefix: 'REQUEST',
 });
 
-requestLogger.info('Processing request');
-// Includes requestId and userId in all logs from this child
+// Context data must be passed with each log call
+requestLogger.info('Processing request', {
+  requestId: 'req-123',
+  userId: 'user-456',
+});
 
-// Alternative syntax using defaultData
+// Multiple child loggers with different prefixes
 const serviceLogger = logger.child({
-  defaultData: {
-    service: 'payment-processor',
-    version: '1.2.3',
-  },
+  messagePrefix: 'PAYMENT',
+});
+
+serviceLogger.info('Service started', {
+  service: 'payment-processor',
+  version: '1.2.3',
 });
 ```
 
@@ -244,12 +248,12 @@ const serviceLogger = logger.child({
 // Child loggers can create their own children
 const moduleLogger = requestLogger.child({ messagePrefix: 'AUTH' });
 moduleLogger.warn('Invalid token');
-// Output: [AUTH] Invalid token (with inherited context)
+// Output: [REQUEST] [AUTH] Invalid token
 
 // Deep nesting with prefix combination
 const subModuleLogger = moduleLogger.child({ messagePrefix: 'JWT' });
 subModuleLogger.debug('Token validation');
-// Output: [AUTH] [JWT] Token validation
+// Output: [REQUEST] [AUTH] [JWT] Token validation
 ```
 
 ### Contextual Logging Patterns
@@ -280,16 +284,31 @@ function handleRequest(req: Request) {
 class DatabaseService {
   private logger = logger.child({
     messagePrefix: 'DB',
-    context: { service: 'database' },
   });
 
+  private serviceContext = {
+    service: 'database',
+    version: '2.1.0',
+  };
+
   async query(sql: string) {
-    this.logger.debug('Executing query', { sql });
+    this.logger.debug('Executing query', {
+      ...this.serviceContext,
+      sql,
+    });
+
     try {
       // Execute query...
-      this.logger.info('Query successful');
+      this.logger.info('Query successful', {
+        ...this.serviceContext,
+        rowCount: result.length,
+      });
     } catch (error) {
-      this.logger.error('Query failed', { sql, error: error.message });
+      this.logger.error('Query failed', {
+        ...this.serviceContext,
+        sql,
+        error: error.message,
+      });
       throw error;
     }
   }
@@ -318,6 +337,11 @@ logger.setOptions({
 // Logfmt format - key=value pairs
 logger.setOptions({
   pluggableFormatter: createFormatter('logfmt'),
+});
+
+// Pretty console format - multi-line with enhanced readability
+logger.setOptions({
+  pluggableFormatter: createFormatter('pretty'),
 });
 ```
 

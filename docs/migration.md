@@ -107,13 +107,13 @@ childLogger.info('Authentication successful');
 
 ```typescript
 const childLogger = logger.child({
-  context: {
-    service: 'auth',
-    version: '1.0.0',
-  },
+  messagePrefix: 'AUTH',
 });
 
-childLogger.info('Authentication successful');
+childLogger.info('Authentication successful', {
+  service: 'auth',
+  version: '1.0.0',
+});
 ```
 
 ### Custom Transport Migration
@@ -222,9 +222,9 @@ child.info('Processing authentication');
 
 ```typescript
 const child = logger.child({
-  context: { module: 'auth' },
+  messagePrefix: 'AUTH',
 });
-child.info('Processing authentication');
+child.info('Processing authentication', { module: 'auth' });
 ```
 
 ### Serializers Migration
@@ -320,9 +320,10 @@ const childLogger = logger.child({
 
 ```typescript
 const childLogger = logger.child({
-  context: {
-    widget_type: 'wid-47',
-  },
+  messagePrefix: 'WIDGET',
+});
+childLogger.info('Widget created', {
+  widget_type: 'wid-47',
 });
 ```
 
