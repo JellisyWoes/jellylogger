@@ -1,43 +1,64 @@
+# -----------------------------
 # Dependency directories
-node_modules
-example
+# -----------------------------
+node_modules/
+example/
+
+# -----------------------------
 # Build output
-dist
-out
+# -----------------------------
+dist/
+out/
 *.tgz
-*.log
-# Source control
-.github/copilot-instructions.md
 
-# IDE/editor files
-.idea
-.DS_Store
-
-# Caches
-.cache
-*.tsbuildinfo
-.eslintcache
-
+# -----------------------------
 # Logs
-logs
+# -----------------------------
+logs/
 test-logs/
+*.log
 _.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
+# -----------------------------
 # Code coverage
-coverage
+# -----------------------------
+coverage/
 *.lcov
 
+# -----------------------------
 # Environment variable files
+# -----------------------------
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
 
+# -----------------------------
+# Editor/IDE files
+# -----------------------------
+.idea/
+.DS_Store
+.vscode/
 
+# -----------------------------
+# Caches and build info
+# -----------------------------
+.cache/
+*.tsbuildinfo
+.eslintcache
+
+# -----------------------------
+# Source control
+# -----------------------------
+.github/copilot-instructions.md
+
+# -----------------------------
+# Documentation and misc
+# -----------------------------
 Explaining.md
 STRUCTURE.md
 
+# -----------------------------
+# Test files and scripts
+# -----------------------------
 test/testusecase.ts
-.vscode/*
+bench-logger.ts
