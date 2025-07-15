@@ -11,6 +11,7 @@ import { DefaultFormatter } from './DefaultFormatter';
 import { LogfmtFormatter } from './LogfmtFormatter';
 import { NdjsonFormatter } from './NdjsonFormatter';
 import { PrettyConsoleFormatter } from './PrettyConsoleFormatter';
+import { PrettyJsonFormatter } from './PrettyJsonFormatter';
 
 // Formatter registry for easy access
 export const BUILT_IN_FORMATTERS = {
@@ -18,6 +19,7 @@ export const BUILT_IN_FORMATTERS = {
   logfmt: LogfmtFormatter,
   ndjson: NdjsonFormatter,
   pretty: PrettyConsoleFormatter,
+  prettyjson: PrettyJsonFormatter,
 } as const;
 
 // Utility type for built-in formatter names
@@ -28,6 +30,9 @@ export function createFormatter(name: BuiltInFormatterName): LogFormatter {
   const FormatterClass = BUILT_IN_FORMATTERS[name];
   return new FormatterClass();
 }
+
+// Export PrettyJsonFormatter for direct use if needed
+export { PrettyJsonFormatter };
 
 // Default formatter (now uses the dedicated DefaultFormatter class)
 export const DEFAULT_FORMATTER = new DefaultFormatter();
