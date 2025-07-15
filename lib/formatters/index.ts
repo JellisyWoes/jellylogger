@@ -1,17 +1,17 @@
 // Core formatter interface
 export type { LogFormatter } from './LogFormatter';
+import { DefaultFormatter } from './DefaultFormatter';
+import { LogfmtFormatter } from './LogfmtFormatter';
 import type { LogFormatter } from './LogFormatter';
+import { NdjsonFormatter } from './NdjsonFormatter';
+import { PrettyConsoleFormatter } from './PrettyConsoleFormatter';
+import { PrettyJsonFormatter } from './PrettyJsonFormatter';
 
 // Built-in formatters
 export { DefaultFormatter } from './DefaultFormatter';
 export { LogfmtFormatter } from './LogfmtFormatter';
 export { NdjsonFormatter } from './NdjsonFormatter';
 export { PrettyConsoleFormatter } from './PrettyConsoleFormatter';
-import { DefaultFormatter } from './DefaultFormatter';
-import { LogfmtFormatter } from './LogfmtFormatter';
-import { NdjsonFormatter } from './NdjsonFormatter';
-import { PrettyConsoleFormatter } from './PrettyConsoleFormatter';
-import { PrettyJsonFormatter } from './PrettyJsonFormatter';
 
 // Formatter registry for easy access
 export const BUILT_IN_FORMATTERS = {
@@ -38,5 +38,5 @@ export { PrettyJsonFormatter };
 export const DEFAULT_FORMATTER = new DefaultFormatter();
 
 // Re-export types from core for convenience
-export type { LogEntry, CustomConsoleColors } from '../core/types';
 export { LogLevel } from '../core/constants';
+export type { CustomConsoleColors, LogEntry } from '../core/types';
