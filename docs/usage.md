@@ -215,45 +215,56 @@ authLogger.error('Invalid credentials');
 // Output: [AUTH] Invalid credentials
 ```
 
+
 ### Context-Based Child Loggers
 
-**Note**: The current implementation only supports `messagePrefix` for child loggers. Context data must be passed explicitly with each log call.
+Child loggers now support persistent context via the `context` and `defaultData` options. This context is automatically merged into every log entry from the child logger, and is inherited through nested child loggers. Per-call data can override persistent context.
 
 ```typescript
-// Child logger with message prefix only
+// Child logger with persistent context
 const requestLogger = logger.child({
   messagePrefix: 'REQUEST',
+  context: { requestId: 'req-123', userId: 'user-456' },
 });
 
-// Context data must be passed with each log call
-requestLogger.info('Processing request', {
-  requestId: 'req-123',
-  userId: 'user-456',
-});
+requestLogger.info('Processing request');
+// Log entry: { requestId: 'req-123', userId: 'user-456', ... }
 
-// Multiple child loggers with different prefixes
+// Per-call data overrides persistent context
+requestLogger.info('Override user', { userId: 'override-user' });
+// Log entry: { requestId: 'req-123', userId: 'override-user', ... }
+
+// Multiple child loggers with different prefixes and context
 const serviceLogger = logger.child({
   messagePrefix: 'PAYMENT',
+  context: { service: 'payment-processor', version: '1.2.3' },
 });
 
-serviceLogger.info('Service started', {
-  service: 'payment-processor',
-  version: '1.2.3',
-});
+serviceLogger.info('Service started');
+// Log entry: { service: 'payment-processor', version: '1.2.3', ... }
 ```
+
 
 ### Nested Child Loggers
 
 ```typescript
-// Child loggers can create their own children
-const moduleLogger = requestLogger.child({ messagePrefix: 'AUTH' });
+// Child loggers can create their own children and merge context
+const moduleLogger = requestLogger.child({
+  messagePrefix: 'AUTH',
+  context: { authMethod: 'jwt' },
+});
 moduleLogger.warn('Invalid token');
 // Output: [REQUEST] [AUTH] Invalid token
+// Log entry: { requestId: 'req-123', userId: 'user-456', authMethod: 'jwt', ... }
 
-// Deep nesting with prefix combination
-const subModuleLogger = moduleLogger.child({ messagePrefix: 'JWT' });
+// Deep nesting with prefix and context combination
+const subModuleLogger = moduleLogger.child({
+  messagePrefix: 'JWT',
+  context: { tokenType: 'access' },
+});
 subModuleLogger.debug('Token validation');
 // Output: [REQUEST] [AUTH] [JWT] Token validation
+// Log entry: { requestId: 'req-123', userId: 'user-456', authMethod: 'jwt', tokenType: 'access', ... }
 ```
 
 ### Contextual Logging Patterns
@@ -594,6 +605,78 @@ logger.addTransport(new WebSocketTransport('ws://invalid-url'));
 logger.info('Message'); // Error logged to console, app continues
 ```
 
+### Internal Error Handling
+
+JellyLogger provides hooks to customize how internal library errors are handled. By default, internal errors are logged to `console.error`, warnings to `console.warn`, and debug messages to `console.debug`.
+
+```typescript
+import {
+  setInternalErrorHandler,
+  setInternalWarningHandler,
+  setInternalDebugHandler,
+} from 'jellylogger';
+
+// Route internal errors to your monitoring service
+setInternalErrorHandler((message, error) => {
+  monitoringService.trackError({
+    library: 'jellylogger',
+    message,
+    error: error instanceof Error ? error.message : String(error),
+  });
+});
+
+// Custom warning handler
+setInternalWarningHandler((message, error) => {
+  console.warn(`[JellyLogger] ${message}`, error);
+});
+
+// Custom debug handler (useful for development)
+setInternalDebugHandler((message, data) => {
+  if (process.env.DEBUG_JELLYLOGGER) {
+    console.log(`[JellyLogger DEBUG] ${message}`, data);
+  }
+});
+
+// Reset to default handlers
+setInternalErrorHandler(null);
+setInternalWarningHandler(null);
+setInternalDebugHandler(null);
+```
+
+**When Internal Handlers Are Called:**
+
+- **Errors**: Transport failures, serialization errors, critical internal issues
+- **Warnings**: Configuration issues, deprecation notices, non-critical problems
+- **Debug**: Reconnection attempts, queue management, internal state changes
+
+**Custom Transport Integration:**
+
+```typescript
+import { logInternalError, logInternalWarning, logInternalDebug } from 'jellylogger';
+import type { Transport, LogEntry, TransportOptions } from 'jellylogger';
+
+class CustomTransport implements Transport {
+  async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+    try {
+      await this.sendToDestination(entry);
+    } catch (error) {
+      // Use internal error handler instead of console.error
+      logInternalError('CustomTransport failed to send log', error);
+    }
+  }
+
+  private async reconnect(): Promise<void> {
+    logInternalDebug('CustomTransport reconnecting...');
+    try {
+      await this.establishConnection();
+      logInternalDebug('CustomTransport reconnected successfully');
+    } catch (error) {
+      logInternalWarning('CustomTransport reconnection failed', error);
+    }
+  }
+}
+```
+
 ### Flushing Before Shutdown
 
 ```typescript
@@ -734,6 +817,207 @@ setInterval(async () => {
   }
 }, 30000); // Every 30 seconds
 ```
+
+---
+
+## Bun HTTP Request Logging
+
+JellyLogger provides a dedicated middleware for logging Bun HTTP server requests with full control over what information is captured and how it's redacted.
+
+### Basic Usage
+
+```typescript
+import { bunRequestLogger } from 'jellylogger';
+
+const handler = bunRequestLogger(async (req) => {
+  return new Response('Hello, World!');
+});
+
+Bun.serve({
+  port: 3000,
+  fetch: handler,
+});
+```
+
+### Available Request Fields
+
+The middleware can log these fields from the Request object:
+
+- `method` - HTTP method (GET, POST, etc.)
+- `url` - Full URL
+- `headers` - Request headers
+- `body` - Request body content
+- `redirect` - Redirect behavior
+- `referrer` - Referrer URL
+- `referrerPolicy` - Referrer policy
+- `credentials` - Credentials mode
+- `integrity` - Subresource integrity
+- `mode` - Request mode
+- `cache` - Cache mode
+- `destination` - Request destination
+- `bodyUsed` - Whether body was consumed
+- `remoteAddress` - Client IP address (if available from server)
+
+### Configuration Options
+
+```typescript
+interface BunRequestLoggerOptions {
+  /** Include request headers (default: true) */
+  includeHeaders?: boolean;
+
+  /** Include request body (default: false) */
+  includeBody?: boolean;
+
+  /** Include request metadata (redirect, referrer, etc.; default: false) */
+  includeMeta?: boolean;
+
+  /** Include remote address/client IP (default: true) */
+  includeRemoteAddress?: boolean;
+
+  /** Fine-grained field selection (overrides include* options) */
+  fields?: BunRequestField[];
+
+  /** Header names to redact (default: ['authorization', 'cookie']) */
+  redactHeaders?: string[];
+
+  /** Full redaction configuration for advanced use */
+  redaction?: RedactionConfig;
+
+  /** Custom logger instance */
+  logger?: JellyLogger;
+
+  /** Log level (default: 'info') */
+  logLevel?: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
+
+  /** Custom message prefix (default: 'HTTP Request') */
+  messagePrefix?: string;
+
+  /** Max body size in bytes to log (default: 10000) */
+  maxBodySize?: number;
+}
+```
+
+### Common Patterns
+
+#### Development Configuration
+
+Log everything for debugging:
+
+```typescript
+const handler = bunRequestLogger(
+  async (req) => {
+    // Your handler logic
+    return new Response('OK');
+  },
+  {
+    includeHeaders: true,
+    includeBody: true,
+    includeMeta: true,
+    includeRemoteAddress: true,
+    redactHeaders: [], // No redaction in dev
+    logLevel: 'debug',
+  }
+);
+```
+
+#### Production Configuration
+
+Log essential info with security:
+
+```typescript
+const handler = bunRequestLogger(
+  async (req) => {
+    // Your handler logic
+    return new Response('OK');
+  },
+  {
+    includeHeaders: true,
+    includeBody: false, // Bodies can be large/sensitive
+    includeMeta: false,
+    includeRemoteAddress: true,
+    redactHeaders: [
+      'authorization',
+      'cookie',
+      'x-api-key',
+      'x-auth-token',
+    ],
+    logLevel: 'info',
+    messagePrefix: 'API',
+  }
+);
+```
+
+#### Fine-Grained Field Selection
+
+Select exactly which fields to log:
+
+```typescript
+const handler = bunRequestLogger(
+  async (req) => new Response('OK'),
+  {
+    fields: ['method', 'url', 'headers', 'remoteAddress'],
+    redactHeaders: ['authorization'],
+  }
+);
+```
+
+#### Advanced Redaction
+
+Use full redaction config for complex scenarios:
+
+```typescript
+const handler = bunRequestLogger(
+  async (req) => new Response('OK'),
+  {
+    includeHeaders: true,
+    includeBody: true,
+    redaction: {
+      keys: ['password', 'token', 'secret', 'ssn', 'creditCard'],
+      stringPatterns: [
+        /\b\d{3}-\d{2}-\d{4}\b/g, // SSN
+        /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g, // Credit cards
+        /Bearer\s+[\w-]+/gi, // Bearer tokens
+      ],
+      replacement: '[REDACTED]',
+      caseInsensitive: true,
+    },
+  }
+);
+```
+
+#### Custom Logger Instance
+
+Use a child logger with context:
+
+```typescript
+import { logger } from 'jellylogger';
+
+const apiLogger = logger.child({ messagePrefix: 'API' });
+
+const handler = bunRequestLogger(
+  async (req) => new Response('OK'),
+  {
+    logger: apiLogger,
+    messagePrefix: 'Request',
+  }
+);
+// Logs will be prefixed with "[API] [Request]"
+```
+
+### Important Notes
+
+1. **Body Consumption**: When `includeBody: true`, the middleware clones the request to avoid consuming the original body, allowing your handler to still read it.
+
+2. **Async Logging**: Logging happens asynchronously and won't block request handling. Errors during logging are caught and won't affect your handler.
+
+3. **Remote Address**: The `remoteAddress` field requires Bun's `server.requestIP()` method. It will be undefined if the server doesn't support it.
+
+4. **Body Truncation**: Large bodies are automatically truncated based on `maxBodySize` to prevent memory issues.
+
+5. **Performance**: The middleware is designed to have minimal performance impact. For high-traffic servers, consider:
+   - Setting `includeBody: false`
+   - Using `fields` to select only needed data
+   - Using appropriate log levels (info or higher in production)
 
 ---
 

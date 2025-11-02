@@ -285,12 +285,13 @@ logger.addTransport(transport);
 
 ### Reconnection Logic
 
-The transport implements intelligent reconnection:
+The transport implements intelligent reconnection with enhanced error handling:
 
 - **Exponential Backoff**: Increases delay between reconnection attempts
 - **Queue Management**: Queues logs during disconnection
 - **Automatic Retry**: Continuously attempts to reconnect
 - **Graceful Degradation**: Continues operation even if WebSocket fails
+- **Internal Error Routing**: WebSocket errors are logged via internal error handlers rather than console
 
 ### Custom Serialization
 

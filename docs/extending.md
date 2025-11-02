@@ -56,9 +56,14 @@ class DatabaseTransport implements Transport {
   }
 }
 
-// Usage
+// Usage with persistent context
 const dbTransport = new DatabaseTransport('postgresql://...');
-logger.addTransport(dbTransport);
+const userLogger = logger.child({
+  messagePrefix: 'DB',
+  context: { userId: 'user-123', tenant: 'acme' },
+});
+userLogger.addTransport(dbTransport);
+userLogger.info('Query executed', { query: 'SELECT * FROM users' });
 ```
 
 ### Advanced Transport with Buffering
@@ -116,13 +121,17 @@ class BufferedTransport implements Transport {
   }
 }
 
-// Usage
+// Usage with persistent context
 const bufferedFileTransport = new BufferedTransport(new FileTransport('./logs/app.log'), {
   bufferSize: 50,
   flushInterval: 3000,
 });
-
-logger.addTransport(bufferedFileTransport);
+const serviceLogger = logger.child({
+  messagePrefix: 'SERVICE',
+  context: { service: 'payment', version: '1.2.3' },
+});
+serviceLogger.addTransport(bufferedFileTransport);
+serviceLogger.info('Buffering started');
 ```
 
 ### HTTP API Transport
@@ -197,14 +206,18 @@ class HttpApiTransport implements Transport {
   }
 }
 
-// Usage
+// Usage with persistent context
 const apiTransport = new HttpApiTransport('https://logs.example.com/api/logs', {
   apiKey: process.env.LOG_API_KEY,
   timeout: 10000,
   retries: 3,
 });
-
-logger.addTransport(apiTransport);
+const apiLogger = logger.child({
+  messagePrefix: 'API',
+  context: { env: 'production' },
+});
+apiLogger.addTransport(apiTransport);
+apiLogger.error('API failure', { endpoint: '/users' });
 ```
 
 ### Email Transport for Critical Alerts
@@ -272,7 +285,7 @@ class EmailTransport implements Transport {
   }
 }
 
-// Usage
+// Usage with persistent context
 const emailTransport = new EmailTransport({
   host: 'smtp.example.com',
   port: 587,
@@ -280,8 +293,12 @@ const emailTransport = new EmailTransport({
   password: process.env.SMTP_PASSWORD!,
   to: ['alerts@example.com', 'ops-team@example.com'],
 });
-
-logger.addTransport(emailTransport);
+const alertLogger = logger.child({
+  messagePrefix: 'ALERT',
+  context: { severity: 'critical' },
+});
+alertLogger.addTransport(emailTransport);
+alertLogger.fatal('Critical system error');
 ```
 
 ---

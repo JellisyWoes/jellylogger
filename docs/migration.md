@@ -106,14 +106,14 @@ childLogger.info('Authentication successful');
 **JellyLogger:**
 
 ```typescript
+// As of v4.1.3, persistent context is supported via context/defaultData
 const childLogger = logger.child({
   messagePrefix: 'AUTH',
+  context: { service: 'auth', version: '1.0.0' },
 });
 
-childLogger.info('Authentication successful', {
-  service: 'auth',
-  version: '1.0.0',
-});
+childLogger.info('Authentication successful');
+// Log entry: { service: 'auth', version: '1.0.0', ... }
 ```
 
 ### Custom Transport Migration
@@ -223,8 +223,10 @@ child.info('Processing authentication');
 ```typescript
 const child = logger.child({
   messagePrefix: 'AUTH',
+  context: { module: 'auth' },
 });
-child.info('Processing authentication', { module: 'auth' });
+child.info('Processing authentication');
+// Log entry: { module: 'auth', ... }
 ```
 
 ### Serializers Migration
@@ -321,10 +323,10 @@ const childLogger = logger.child({
 ```typescript
 const childLogger = logger.child({
   messagePrefix: 'WIDGET',
+  context: { widget_type: 'wid-47' },
 });
-childLogger.info('Widget created', {
-  widget_type: 'wid-47',
-});
+childLogger.info('Widget created');
+// Log entry: { widget_type: 'wid-47', ... }
 ```
 
 ---
@@ -403,6 +405,123 @@ try {
 ---
 
 ## Upgrading JellyLogger Versions
+
+### From v4.1.2 to v4.1.3
+
+#### New Features
+
+1. **Persistent Child Logger Context:**
+
+   ```typescript
+   // v4.1.3 - Child loggers now support persistent context
+   const requestLogger = logger.child({
+     messagePrefix: 'REQUEST',
+     context: { requestId: 'req-123', userId: 'user-456' },
+   });
+
+   requestLogger.info('Processing request');
+   // Log entry automatically includes: { requestId: 'req-123', userId: 'user-456', ... }
+
+   // Nested children merge parent and child context
+   const authLogger = requestLogger.child({
+     messagePrefix: 'AUTH',
+     context: { authMethod: 'jwt' },
+   });
+   authLogger.info('Token validated');
+   // Log entry: { requestId: 'req-123', userId: 'user-456', authMethod: 'jwt', ... }
+   ```
+
+2. **Internal Error Handling Hooks:**
+
+   ```typescript
+   // v4.1.3 - Customize how JellyLogger reports internal errors
+   import {
+     setInternalErrorHandler,
+     setInternalWarningHandler,
+     setInternalDebugHandler,
+   } from 'jellylogger';
+
+   // Route internal errors to your monitoring service
+   setInternalErrorHandler((message, error) => {
+     monitoringService.trackError({
+       library: 'jellylogger',
+       message,
+       error: error instanceof Error ? error.message : String(error),
+     });
+   });
+
+   // Custom transport implementations can use these too
+   import { logInternalError, logInternalWarning, logInternalDebug } from 'jellylogger';
+
+   class CustomTransport implements Transport {
+     async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
+       try {
+         await this.sendToDestination(entry);
+       } catch (error) {
+         logInternalError('CustomTransport failed', error);
+       }
+     }
+   }
+   ```
+
+3. **Bun HTTP Request Logger:**
+
+   ```typescript
+   // v4.1.3 - Built-in middleware for Bun HTTP servers
+   import { bunRequestLogger } from 'jellylogger';
+
+   const handler = bunRequestLogger(
+     async req => new Response('Hello'),
+     {
+       includeHeaders: true,
+       includeBody: false,
+       redactHeaders: ['authorization', 'x-api-key'],
+       logLevel: 'info',
+       fields: ['method', 'url', 'remoteAddress'], // Fine-grained field control
+     }
+   );
+
+   Bun.serve({ port: 3000, fetch: handler });
+   ```
+
+#### Migration Steps
+
+No breaking changes in v4.1.3. New features are opt-in:
+
+1. **Update to latest:**
+
+   ```bash
+   bun add jellylogger@latest
+   ```
+
+2. **Optional: Migrate child loggers to use persistent context:**
+
+   ```typescript
+   // Before (v4.1.2 and earlier)
+   const child = logger.child({ messagePrefix: 'AUTH' });
+   child.info('Token validated', { requestId, userId }); // Context passed every time
+
+   // After (v4.1.3)
+   const child = logger.child({
+     messagePrefix: 'AUTH',
+     context: { requestId, userId }, // Context stored once
+   });
+   child.info('Token validated'); // Context automatically included
+   ```
+
+3. **Optional: Add internal error handlers for custom monitoring:**
+
+   ```typescript
+   setInternalErrorHandler((message, error) => {
+     // Send to your monitoring service
+   });
+   ```
+
+4. **Optional: Use Bun request logger for HTTP servers:**
+   ```typescript
+   import { bunRequestLogger } from 'jellylogger';
+   const handler = bunRequestLogger(yourHandler, options);
+   ```
 
 ### From v1.x to v2.x
 

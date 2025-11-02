@@ -209,16 +209,41 @@ interface LoggerOptions {
 }
 ```
 
+
 ### ChildLoggerOptions
 
-Configuration for child loggers.
+Configuration for child loggers. As of v4.1.3, `context` and `defaultData` are fully supported and merged into all log entries from the child logger. Persistent context is inherited and merged through nested child loggers. Per-call data can override persistent context.
 
 ```typescript
 interface ChildLoggerOptions {
   messagePrefix?: string; // Prefix for all messages
-  // Note: defaultData and context are not currently implemented
-  // Context data must be passed explicitly with each log call
+  context?: Record<string, unknown>; // Persistent context for all log entries
+  defaultData?: Record<string, unknown>; // (Alias for context; merged with context if both provided)
 }
+```
+
+**Persistent context example:**
+
+```typescript
+const userLogger = logger.child({
+  messagePrefix: 'USER',
+  context: { userId: '123', tenant: 'acme' },
+});
+
+userLogger.info('Profile updated', { action: 'edit' });
+// Log entry will include: { userId: '123', tenant: 'acme', action: 'edit', ... }
+
+// Nested child logger merges context
+const requestLogger = userLogger.child({
+  messagePrefix: 'REQUEST',
+  context: { requestId: 'req-456' },
+});
+requestLogger.warn('Slow query', { duration: 1200 });
+// Log entry: { userId: '123', tenant: 'acme', requestId: 'req-456', duration: 1200, ... }
+
+// Per-call data overrides persistent context
+requestLogger.info('Override user', { userId: 'override-user' });
+// Log entry: { userId: 'override-user', tenant: 'acme', requestId: 'req-456', ... }
 ```
 
 ### LogEntry
@@ -523,6 +548,119 @@ logger.setOptions({
 ---
 
 ## Utility Functions
+
+### Internal Error Handlers
+
+```typescript
+function setInternalErrorHandler(handler: InternalErrorHandler | null): void;
+```
+
+Sets a custom handler for internal JellyLogger errors. Pass `null` to reset to default console.error behavior.
+
+```typescript
+function setInternalWarningHandler(handler: InternalWarningHandler | null): void;
+```
+
+Sets a custom handler for internal JellyLogger warnings. Pass `null` to reset to default console.warn behavior.
+
+```typescript
+function setInternalDebugHandler(handler: InternalDebugHandler | null): void;
+```
+
+Sets a custom handler for internal JellyLogger debug messages. Pass `null` to reset to default console.debug behavior.
+
+```typescript
+function logInternalError(message: string, error?: unknown): void;
+```
+
+Logs an internal error using the configured error handler.
+
+```typescript
+function logInternalWarning(message: string, error?: unknown): void;
+```
+
+Logs an internal warning using the configured warning handler.
+
+```typescript
+function logInternalDebug(message: string, data?: unknown): void;
+```
+
+Logs an internal debug message using the configured debug handler.
+
+**Handler Types:**
+
+```typescript
+type InternalErrorHandler = (message: string, error?: unknown) => void;
+type InternalWarningHandler = (message: string, error?: unknown) => void;
+type InternalDebugHandler = (message: string, data?: unknown) => void;
+```
+
+**Example:**
+
+```typescript
+import { setInternalErrorHandler, setInternalWarningHandler } from 'jellylogger';
+
+// Redirect internal errors to monitoring service
+setInternalErrorHandler((message, error) => {
+  monitoringService.trackError({
+    library: 'jellylogger',
+    message,
+    error: error instanceof Error ? error.message : String(error),
+  });
+});
+
+// Custom warning handler
+setInternalWarningHandler((message, error) => {
+  console.warn(`[JellyLogger] ${message}`, error);
+});
+```
+
+### Bun Request Logger
+
+```typescript
+function bunRequestLogger<TServer = unknown>(
+  handler: (request: Request, server: TServer) => Response | Promise<Response> | undefined | Promise<undefined>,
+  options?: BunRequestLoggerOptions
+): (request: Request, server: TServer) => Response | Promise<Response> | undefined | Promise<undefined>;
+```
+
+Wraps a Bun HTTP request handler to log request information.
+
+**Options:**
+
+```typescript
+interface BunRequestLoggerOptions {
+  includeHeaders?: boolean; // Default: true
+  includeBody?: boolean; // Default: false
+  includeMeta?: boolean; // Default: false
+  includeRemoteAddress?: boolean; // Default: true
+  fields?: BunRequestField[]; // Fine-grained field selection
+  redactHeaders?: string[]; // Default: ['authorization', 'cookie']
+  redaction?: RedactionConfig; // Full redaction config
+  logger?: JellyLogger; // Custom logger instance
+  logLevel?: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace'; // Default: 'info'
+  messagePrefix?: string; // Default: 'HTTP Request'
+  maxBodySize?: number; // Default: 10000 bytes
+}
+```
+
+**Example:**
+
+```typescript
+import { bunRequestLogger } from 'jellylogger';
+
+const handler = bunRequestLogger(
+  async (req) => new Response('Hello'),
+  {
+    includeHeaders: true,
+    includeBody: false,
+    redactHeaders: ['authorization', 'x-api-key'],
+    logLevel: 'info',
+  }
+);
+
+Bun.serve({ port: 3000, fetch: handler });
+```
 
 ### Redaction Functions
 
