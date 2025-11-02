@@ -8,6 +8,7 @@ import type {
 } from '../core/types';
 import { DEFAULT_FORMATTER } from '../formatters';
 import { getRedactedEntry } from '../redaction';
+import { logInternalError } from '../utils/internalErrorHandler';
 import { safeJsonStringify, safeStringify } from '../utils/serialization';
 
 /**
@@ -147,7 +148,7 @@ export class DiscordWebhookTransport implements Transport {
       } else {
         // Only log if suppressConsoleErrors is false
         if (!this.suppressConsoleErrors) {
-          console.error(
+          logInternalError(
             'Failed to send log batch to Discord webhook after retries:',
             e instanceof Error ? e.message : String(e),
           );
@@ -169,7 +170,7 @@ export class DiscordWebhookTransport implements Transport {
         try {
           formatted = options.pluggableFormatter.format(entry, { useColors: false });
         } catch (error) {
-          console.error(
+          logInternalError(
             'Pluggable formatter failed in DiscordWebhookTransport, using default:',
             error instanceof Error ? error.message : String(error),
           );
@@ -309,7 +310,7 @@ export class DiscordWebhookTransport implements Transport {
             e.message.includes('Network request failed')))
       ) {
         if (!this.suppressConsoleErrors) {
-          console.error(
+          logInternalError(
             `Failed to send Discord message: Network error or invalid URL - ${e.message}`,
           );
         }

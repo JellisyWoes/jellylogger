@@ -14,6 +14,7 @@ import { basename, dirname, extname, join } from 'path';
 import type { LogEntry, LoggerOptions, Transport, TransportOptions } from '../core/types';
 import { DEFAULT_FORMATTER } from '../formatters';
 import { getRedactedEntry } from '../redaction';
+import { logInternalError, logInternalWarning } from '../utils/internalErrorHandler';
 import { safeJsonStringify } from '../utils/serialization';
 
 /**
@@ -125,7 +126,7 @@ export class FileTransport implements Transport {
         mkdirSync(dir, { recursive: true });
       }
     } catch (error) {
-      console.warn('Failed to create log directory:', error);
+      logInternalWarning('Failed to create log directory:', error);
     }
   }
 
@@ -155,7 +156,7 @@ export class FileTransport implements Transport {
                 this.rotationPromise = null;
               })
               .catch(error => {
-                console.error('FileTransport date rotation error:', error);
+                logInternalError('FileTransport date rotation error:', error);
               });
           }
         }
@@ -172,7 +173,7 @@ export class FileTransport implements Transport {
           logString =
             (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
         } catch (error) {
-          console.error(
+          logInternalError(
             'Pluggable formatter failed in FileTransport, using default:',
             error instanceof Error ? error.message : String(error),
           );
@@ -184,7 +185,7 @@ export class FileTransport implements Transport {
           logString =
             (typeof formatted === 'string' ? formatted : JSON.stringify(formatted)) + osEOL;
         } catch (error) {
-          console.error(
+          logInternalError(
             'Custom formatter failed in FileTransport, using default:',
             error instanceof Error ? error.message : String(error),
           );
@@ -202,7 +203,7 @@ export class FileTransport implements Transport {
       try {
         this.bunFileOps.appendFileSync(this.filePath, logString);
       } catch (error) {
-        console.error('FileTransport write error:', error);
+        logInternalError('FileTransport write error:', error);
         return Promise.resolve();
       }
 
@@ -219,17 +220,17 @@ export class FileTransport implements Transport {
                 this.rotationPromise = null;
               })
               .catch(error => {
-                console.error('FileTransport size rotation error:', error);
+                logInternalError('FileTransport size rotation error:', error);
               });
           }
         } catch (error) {
-          console.error('FileTransport size check error:', error);
+          logInternalError('FileTransport size check error:', error);
         }
       }
 
       return Promise.resolve();
     } catch (error) {
-      console.error('FileTransport log error:', error);
+      logInternalError('FileTransport log error:', error);
       return Promise.resolve();
     }
   }
@@ -270,7 +271,7 @@ export class FileTransport implements Transport {
             try {
               this.fs.unlinkSync(oldFile);
             } catch (e) {
-              console.warn(`Failed to delete old log file ${oldFile}:`, e);
+              logInternalWarning(`Failed to delete old log file ${oldFile}:`, e);
             }
           }
         }
@@ -290,7 +291,7 @@ export class FileTransport implements Transport {
             try {
               this.fs.renameSync(currentFile, nextFile);
             } catch (e) {
-              console.warn(`Failed to move log file ${currentFile} to ${nextFile}:`, e);
+              logInternalWarning(`Failed to move log file ${currentFile} to ${nextFile}:`, e);
             }
           }
         }
@@ -309,26 +310,26 @@ export class FileTransport implements Transport {
             // Remove original file after successful compression
             this.fs.unlinkSync(this.filePath);
           } catch (e) {
-            console.error(`Failed to compress and rotate log file:`, e);
+            logInternalError(`Failed to compress and rotate log file:`, e);
             // Continue with normal rotation if compression fails
             try {
               this.fs.renameSync(this.filePath, rotatedFile);
             } catch (moveError) {
-              console.error(`Failed to move log file during rotation fallback:`, moveError);
+              logInternalError(`Failed to move log file during rotation fallback:`, moveError);
             }
           }
         } else {
           try {
             this.fs.renameSync(this.filePath, rotatedFile);
           } catch (e) {
-            console.error(`Failed to move log file during rotation:`, e);
+            logInternalError(`Failed to move log file during rotation:`, e);
           }
         }
 
         // Create new file instance
         // Removed: this.fileInstance = this.bunFileOps.file(this.filePath);
       } catch (error) {
-        console.error('Critical error during log rotation:', error);
+        logInternalError('Critical error during log rotation:', error);
         // Try to continue with a new file instance even if rotation failed
         // Removed: this.fileInstance = this.bunFileOps.file(this.filePath);
       }

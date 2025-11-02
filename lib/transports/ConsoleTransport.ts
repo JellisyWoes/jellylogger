@@ -8,6 +8,7 @@ import type {
 } from '../core/types';
 import { DEFAULT_FORMATTER } from '../formatters';
 import { getRedactedEntry } from '../redaction';
+import { logInternalError } from '../utils/internalErrorHandler';
 import { safeJsonStringify } from '../utils/serialization';
 
 /**
@@ -49,7 +50,7 @@ export class ConsoleTransport implements Transport {
         consoleMethod(formatted);
         return Promise.resolve();
       } catch (error) {
-        console.error(
+        logInternalError(
           'Pluggable formatter failed, falling back to default:',
           error instanceof Error ? error.message : String(error),
         );
@@ -64,7 +65,7 @@ export class ConsoleTransport implements Transport {
         consoleMethod(output);
         return Promise.resolve();
       } catch (error) {
-        console.error(
+        logInternalError(
           'Custom formatter failed, falling back to default:',
           error instanceof Error ? error.message : String(error),
         );

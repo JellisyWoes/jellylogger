@@ -11,6 +11,8 @@ export interface WebSocketTransportOptions {
   redact?: boolean;
   /** Custom function to serialize log entries. Default: safeJsonStringify */
   serializer?: (entry: LogEntry) => string;
+  /** Whether to automatically reconnect on close. Default: true */
+  autoReconnect?: boolean;
 }
 
 /**
@@ -40,6 +42,55 @@ export class WebSocketTransport implements Transport {
     this.connectionPromise = this.connect();
   }
 
+  /**
+   * Wait for the WebSocket to be open. Resolves when open, rejects if closed.
+   * Uses polling to avoid race conditions with event handler wrapping.
+   */
+  private waitForOpen(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.ws) {
+        reject(new Error('WebSocket not initialized'));
+        return;
+      }
+      if (this.ws.readyState === WebSocket.OPEN) {
+        resolve();
+        return;
+      }
+      if (this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
+        reject(new Error('WebSocket is closed'));
+        return;
+      }
+
+      // Poll for connection status to avoid event handler race conditions
+      const pollInterval = 5;
+      const maxWaitTime = 5000;
+      let elapsed = 0;
+
+      const poll = () => {
+        if (!this.ws) {
+          reject(new Error('WebSocket lost'));
+          return;
+        }
+        if (this.ws.readyState === WebSocket.OPEN) {
+          resolve();
+          return;
+        }
+        if (this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
+          reject(new Error('WebSocket closed before opening'));
+          return;
+        }
+        elapsed += pollInterval;
+        if (elapsed >= maxWaitTime) {
+          reject(new Error('WebSocket connection timeout'));
+          return;
+        }
+        setTimeout(poll, pollInterval);
+      };
+
+      setTimeout(poll, pollInterval);
+    });
+  }
+
   private connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
@@ -53,7 +104,10 @@ export class WebSocketTransport implements Transport {
         };
 
         this.ws.onclose = () => {
-          this.scheduleReconnect();
+          const autoReconnect = this.options.autoReconnect ?? true;
+          if (autoReconnect) {
+            this.scheduleReconnect();
+          }
         };
 
         // Handle errors passively; rely on onclose to drive reconnection to avoid double scheduling
@@ -112,27 +166,36 @@ export class WebSocketTransport implements Transport {
     // Enqueue message
     this.queue.push(msg);
 
-    // If connected, flush immediately
-    if (this.ws?.readyState === WebSocket.OPEN && !this.queueFlushPromise) {
+    // Wait for connection if not yet established
+    if (this.connectionPromise) {
       try {
-        await this.flushQueue();
+        await this.connectionPromise;
       } catch {
-        // Keep queued for retry
+        // Connection failed, message remains queued for retry
+        return;
       }
-      return;
     }
 
-    // Ensure a flush happens once the current connection attempt completes
-    if (this.connectionPromise) {
-      this.connectionPromise
-        .then(() => {
-          if (this.ws?.readyState === WebSocket.OPEN && this.queue.length > 0 && !this.queueFlushPromise) {
-            return this.flushQueue();
-          }
-        })
-        .catch(() => {
-          // Leave in queue for future retries
-        });
+    // Wait for any ongoing flush to complete
+    while (this.queueFlushPromise) {
+      try {
+        await this.queueFlushPromise;
+      } catch {
+        // Flush failed, break out and try our own flush
+        break;
+      }
+    }
+
+    // If connection is open and we have messages, flush them
+    if (this.ws?.readyState === WebSocket.OPEN && this.queue.length > 0 && !this.queueFlushPromise) {
+      this.queueFlushPromise = this.flushQueue().finally(() => {
+        this.queueFlushPromise = null;
+      });
+      try {
+        await this.queueFlushPromise;
+      } catch {
+        // Flush failed, messages remain queued
+      }
     }
   }
 
@@ -152,6 +215,16 @@ export class WebSocketTransport implements Transport {
         await this.queueFlushPromise;
       } catch (_err) {
         // Ongoing flush failed
+      }
+    }
+
+    // If not open but we have a ws, wait for it to open (handles race)
+    if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+      try {
+        await this.waitForOpen();
+      } catch {
+        // If it fails to open, nothing to flush
+        return;
       }
     }
 
