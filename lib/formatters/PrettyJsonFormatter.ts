@@ -13,7 +13,7 @@ import type { LogFormatter } from './LogFormatter';
 export class PrettyJsonFormatter implements LogFormatter {
   format(
     entry: LogEntry,
-    options?: { consoleColors?: CustomConsoleColors; useColors?: boolean }
+    options?: { consoleColors?: CustomConsoleColors; useColors?: boolean },
   ): string {
     const colors = getConsistentFormatterColors(options);
     // Build a plain object for pretty-printing
@@ -30,15 +30,15 @@ export class PrettyJsonFormatter implements LogFormatter {
       json = json
         .replace(
           /("timestamp":\s*")([^"]+)(")/,
-          (_m, p1, p2, p3) => `${p1}${dimText(p2, colors)}${p3}`
+          (_m, p1, p2, p3) => `${p1}${dimText(p2, colors)}${p3}`,
         )
         .replace(
           /("level":\s*")([^"]+)(")/,
-          (_m, p1, p2, p3) => `${p1}${colorizeLevelText(p2, entry.level, colors)}${p3}`
+          (_m, p1, p2, p3) => `${p1}${colorizeLevelText(p2, entry.level, colors)}${p3}`,
         )
         .replace(
           /("message":\s*")([^"]+)(")/,
-          (_m, p1, p2, p3) => `${p1}${boldText(p2, colors)}${p3}`
+          (_m, p1, p2, p3) => `${p1}${boldText(p2, colors)}${p3}`,
         );
     }
     return json;

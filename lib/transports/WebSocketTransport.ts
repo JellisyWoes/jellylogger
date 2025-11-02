@@ -27,6 +27,7 @@ export class WebSocketTransport implements Transport {
   private serializer: (entry: LogEntry) => string;
   private connectionPromise: Promise<void> | null = null;
   private queueFlushPromise: Promise<void> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(url: string, options?: WebSocketTransportOptions) {
     this.url = url;
@@ -47,28 +48,17 @@ export class WebSocketTransport implements Transport {
         this.ws.onopen = () => {
           this.reconnecting = false;
           this.reconnectInterval = this.options.reconnectIntervalMs ?? 1000;
-
-          // Ensure queue is flushed once connection is established
-          this.queueFlushPromise = this.flushQueue()
-            .then(() => {
-              this.queueFlushPromise = null;
-              resolve(); // Resolve after flush
-            })
-            .catch(err => {
-              this.queueFlushPromise = null;
-              reject(err);
-            });
+          // Resolve connection; actual flushing is triggered by pending log hooks or explicit flush()
+          resolve();
         };
 
         this.ws.onclose = () => {
           this.scheduleReconnect();
         };
 
-        this.ws.onerror = (error: Event) => {
-          this.scheduleReconnect();
-          if (!this.reconnecting) {
-            reject(error);
-          }
+        // Handle errors passively; rely on onclose to drive reconnection to avoid double scheduling
+        this.ws.onerror = (_error: Event) => {
+          // No-op; onclose will trigger reconnection if needed
         };
       } catch (e) {
         this.scheduleReconnect();
@@ -99,13 +89,15 @@ export class WebSocketTransport implements Transport {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnecting) return;
+    // Prevent multiple timers and excessive constructor calls
+    if (this.reconnecting || this.reconnectTimer) return;
     this.reconnecting = true;
 
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.reconnectInterval = Math.min(this.reconnectInterval * 2, this.maxReconnectInterval);
       this.connectionPromise = this.connect().catch(() => {
-        // Continue retrying on failure
+        // Continue retrying on failure; onclose will reschedule
       });
     }, this.reconnectInterval);
   }
@@ -117,25 +109,30 @@ export class WebSocketTransport implements Transport {
     const redactedEntry = redact ? getRedactedEntry(entry, redactionConfig, 'file') : entry;
     const msg = this.serializer(redactedEntry);
 
-    // Add to queue
+    // Enqueue message
     this.queue.push(msg);
 
-    // If we're connected or connecting, try to send immediately
-    if (this.connectionPromise) {
-      try {
-        await this.connectionPromise;
-      } catch (_err) {
-        return; // Message is already in queue for retry
-      }
-    }
-
-    // If we're connected and no flush is in progress, flush now
+    // If connected, flush immediately
     if (this.ws?.readyState === WebSocket.OPEN && !this.queueFlushPromise) {
       try {
         await this.flushQueue();
-      } catch (_err) {
-        // Silent failure, message remains queued
+      } catch {
+        // Keep queued for retry
       }
+      return;
+    }
+
+    // Ensure a flush happens once the current connection attempt completes
+    if (this.connectionPromise) {
+      this.connectionPromise
+        .then(() => {
+          if (this.ws?.readyState === WebSocket.OPEN && this.queue.length > 0 && !this.queueFlushPromise) {
+            return this.flushQueue();
+          }
+        })
+        .catch(() => {
+          // Leave in queue for future retries
+        });
     }
   }
 
