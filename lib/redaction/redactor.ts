@@ -1,4 +1,5 @@
 import type { LogEntry } from '../core/types';
+import { logInternalDebug, logInternalWarning } from '../utils/internalErrorHandler';
 import { isPrimitive, isRecord, mightHaveCircularRefs } from '../utils/typeGuards';
 import type {
   FieldRedactionConfig,
@@ -38,14 +39,14 @@ function triggerAudit(
   };
 
   if (config.auditRedaction) {
-    console.debug(`[REDACTION AUDIT] ${type.toUpperCase()}: ${context.path}`, event);
+    logInternalDebug(`[REDACTION AUDIT] ${type.toUpperCase()}: ${context.path}`, event);
   }
 
   if (config.auditHook) {
     try {
       config.auditHook(event);
     } catch (error) {
-      console.warn('[REDACTION AUDIT] Error in audit hook:', error);
+      logInternalWarning('[REDACTION AUDIT] Error in audit hook:', error);
     }
   }
 }
@@ -231,7 +232,7 @@ export function redactObject(
       triggerAudit('custom', fullContext, obj, result, config, 'field-specific custom redactor');
       return result;
     } catch (error) {
-      console.warn('[REDACTION] Error in field-specific custom redactor:', error);
+      logInternalWarning('[REDACTION] Error in field-specific custom redactor:', error);
     }
   }
 
@@ -253,7 +254,7 @@ export function redactObject(
           return result;
         }
       } catch (error) {
-        console.warn('[REDACTION] Error in global custom redactor:', error);
+        logInternalWarning('[REDACTION] Error in global custom redactor:', error);
       }
     }
 
@@ -339,7 +340,7 @@ export function redactObject(
                 newObj[key] = result;
                 continue;
               } catch (error) {
-                console.warn(
+                logInternalWarning(
                   `[REDACTION] Error in property field-specific custom redactor for path '${currentPath}':`,
                   error,
                 );
@@ -365,7 +366,7 @@ export function redactObject(
                   continue;
                 }
               } catch (error) {
-                console.warn(
+                logInternalWarning(
                   `[REDACTION] Error in global custom redactor for path '${currentPath}':`,
                   error,
                 );
@@ -399,7 +400,7 @@ export function redactObject(
               newObj[key] = redactObject(propValue, config, propContext, seen, depth + 1);
             }
           } catch (e) {
-            console.warn(
+            logInternalWarning(
               `[REDACTION] Error processing property '${key}' at path '${currentPath}':`,
               e,
             );
@@ -559,7 +560,7 @@ export function redactLogEntry(
         );
       }
     } catch (error) {
-      console.warn(`[REDACTION] Error processing field '${field}':`, error);
+      logInternalWarning(`[REDACTION] Error processing field '${field}':`, error);
       (newEntry as unknown as Record<string, unknown>)[field] = fieldValue; // Keep original on error for this field
     }
   }
