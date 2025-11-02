@@ -62,3 +62,5 @@ STRUCTURE.md
 # -----------------------------
 test/testusecase.ts
 bench-logger.ts
+# Manual test scripts
+manual-test/
