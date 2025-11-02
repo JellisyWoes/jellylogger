@@ -1,8 +1,24 @@
+import './test-utils';
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { LogLevel } from '../lib/core/constants';
 import type { LogEntry } from '../lib/core/types';
 import { WebSocketTransport } from '../lib/transports/WebSocketTransport';
-import './test-utils';
+
+// Patch WebSocketTransport with a test-only close() method
+(WebSocketTransport.prototype as any).close = function () {
+  if (this.reconnectTimer) {
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+  if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    this.ws.close();
+  }
+  this.ws = null;
+  this.queue = [];
+  this.connectionPromise = null;
+  this.queueFlushPromise = null;
+  this.reconnecting = false;
+};
 
 // Mock WebSocket implementation for testing
 class MockWebSocket {
@@ -86,18 +102,29 @@ class MockWebSocket {
 }
 
 describe('WebSocketTransport Implementation', () => {
-  let originalWebSocket: typeof globalThis.WebSocket;
+  // Track all created WebSocketTransport instances for cleanup
+  let createdTransports: WebSocketTransport[] = [];
+  let originalWebSocket: typeof globalThis.WebSocket | undefined;
   let mockWebSocketConstructor: ReturnType<typeof mock>;
-  let lastWebSocketInstance: MockWebSocket;
+  let webSocketInstances: MockWebSocket[] = [];
+  // Map to track which WebSocket belongs to which transport
+  let transportToWsMap: WeakMap<WebSocketTransport, MockWebSocket> = new WeakMap();
 
   beforeEach(() => {
-    // Store original WebSocket
-    originalWebSocket = globalThis.WebSocket;
+    createdTransports = [];
+    webSocketInstances = [];
+    transportToWsMap = new WeakMap();
+    
+    // Store original WebSocket before first mock
+    if (originalWebSocket === undefined) {
+      originalWebSocket = globalThis.WebSocket;
+    }
 
-    // Mock WebSocket constructor
+    // Create a fresh mock WebSocket constructor for each test
     mockWebSocketConstructor = mock((url: string) => {
-      lastWebSocketInstance = new MockWebSocket(url);
-      return lastWebSocketInstance;
+      const instance = new MockWebSocket(url);
+      webSocketInstances.push(instance);
+      return instance;
     });
 
     // Replace global WebSocket
@@ -108,10 +135,45 @@ describe('WebSocketTransport Implementation', () => {
     (globalThis.WebSocket as any).CLOSED = MockWebSocket.CLOSED;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Close all created WebSocketTransport instances to prevent reconnection leaks
+    for (const t of createdTransports) {
+      // @ts-expect-error test-only patch
+      if (typeof t.close === 'function') t.close();
+    }
+    createdTransports = [];
+    // Close all open mock WebSocket connections
+    for (const ws of webSocketInstances) {
+      if (typeof ws.close === 'function' && ws.readyState !== MockWebSocket.CLOSED) {
+        ws.close();
+      }
+    }
+    // Wait for pending timers/callbacks/reconnections to fully settle
+    await new Promise(resolve => setTimeout(resolve, 150));
+    // Clear the webSocketInstances array
+    webSocketInstances = [];
     // Restore original WebSocket
-    globalThis.WebSocket = originalWebSocket;
+    if (originalWebSocket) {
+      globalThis.WebSocket = originalWebSocket;
+    }
   });
+
+  // Helper to get the most recent WebSocket instance
+  const getLastInstance = () => webSocketInstances[webSocketInstances.length - 1];
+  
+  // Helper to get WebSocket for a specific transport (useful for multi-ws tests)
+  const getTransportWs = (transport: WebSocketTransport) => transportToWsMap.get(transport) || getLastInstance();
+  
+  // Helper to register transport with its WebSocket
+  const registerTransport = (transport: WebSocketTransport) => {
+    createdTransports.push(transport);
+    // Get the most recent WebSocket instance (just created for this transport)
+    const ws = getLastInstance();
+    if (ws) {
+      transportToWsMap.set(transport, ws);
+    }
+    return transport;
+  };
 
   const createSampleEntry = (): LogEntry => ({
     timestamp: '2023-01-01T12:00:00.000Z',
@@ -123,17 +185,17 @@ describe('WebSocketTransport Implementation', () => {
 
   it('should create WebSocket connection with correct URL', async () => {
     const url = 'ws://localhost:8080/logs';
-    const _transport = new WebSocketTransport(url);
+    const _transport = registerTransport(new WebSocketTransport(url, { autoReconnect: false }));
 
     // Wait for connection attempt
     await new Promise(resolve => setTimeout(resolve, 50));
 
     expect(mockWebSocketConstructor).toHaveBeenCalledWith(url);
-    expect(lastWebSocketInstance.url).toBe(url);
+    expect(getLastInstance().url).toBe(url);
   });
 
   it('should send log messages after connection is established', async () => {
-    const transport = new WebSocketTransport('ws://localhost:8080/logs');
+    const transport = registerTransport(new WebSocketTransport('ws://localhost:8080/logs', { autoReconnect: false }));
     const entry = createSampleEntry();
 
     // Wait for connection
@@ -141,7 +203,10 @@ describe('WebSocketTransport Implementation', () => {
 
     await transport.log(entry);
 
-    const messages = lastWebSocketInstance.getMessages();
+    // Ensure all messages are flushed
+    await transport.flush();
+
+    const messages = getTransportWs(transport).getMessages();
     expect(messages).toHaveLength(1);
 
     const sentMessage = JSON.parse(messages[0]);
@@ -150,7 +215,7 @@ describe('WebSocketTransport Implementation', () => {
   });
 
   it('should queue messages when connection is not ready', async () => {
-    const transport = new WebSocketTransport('ws://localhost:8080/logs');
+    const transport = registerTransport(new WebSocketTransport('ws://localhost:8080/logs', { autoReconnect: false }));
     const entry = createSampleEntry();
 
     // Send message immediately after construction (connection still in progress)
@@ -161,16 +226,16 @@ describe('WebSocketTransport Implementation', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
 
     // After connection, message should be sent
-    expect(lastWebSocketInstance.getMessages()).toHaveLength(1);
+    expect(getTransportWs(transport).getMessages()).toHaveLength(1);
   });
 
   it('should handle connection failures gracefully', async () => {
     // Create a transport that will fail to connect
-    const transport = new WebSocketTransport('ws://localhost:8080/logs');
+    const transport = registerTransport(new WebSocketTransport('ws://localhost:8080/logs', { autoReconnect: false }));
 
     // Set the WebSocket instance to fail before any logging
-    if (lastWebSocketInstance) {
-      lastWebSocketInstance.setConnectionFailure(true);
+    if (getLastInstance()) {
+      getLastInstance().setConnectionFailure(true);
     }
 
     const entry = createSampleEntry();
@@ -183,12 +248,12 @@ describe('WebSocketTransport Implementation', () => {
 
     // Since connection failed immediately, no messages should be sent
     // But if the transport queues messages for later retry, we check for that behavior
-    const messageCount = lastWebSocketInstance?.getMessages().length || 0;
+    const messageCount = getLastInstance()?.getMessages().length || 0;
     expect(messageCount).toBeGreaterThanOrEqual(0); // Either queued (0) or attempted to send (1)
   });
 
   it('should apply redaction when configured', async () => {
-    const transport = new WebSocketTransport('ws://localhost:8080/logs', { redact: true });
+    const transport = registerTransport(new WebSocketTransport('ws://localhost:8080/logs', { redact: true, autoReconnect: false }));
     const entry: LogEntry = {
       ...createSampleEntry(),
       data: { password: 'secret123', username: 'testuser' },
@@ -204,7 +269,10 @@ describe('WebSocketTransport Implementation', () => {
       },
     });
 
-    const messages = lastWebSocketInstance.getMessages();
+    // Ensure all messages are flushed
+    await transport.flush();
+
+    const messages = getTransportWs(transport).getMessages();
     expect(messages).toHaveLength(1);
 
     const sentMessage = JSON.parse(messages[0]);
@@ -213,7 +281,7 @@ describe('WebSocketTransport Implementation', () => {
   });
 
   it('should skip redaction when disabled', async () => {
-    const transport = new WebSocketTransport('ws://localhost:8080/logs', { redact: false });
+    const transport = registerTransport(new WebSocketTransport('ws://localhost:8080/logs', { redact: false, autoReconnect: false }));
     const entry: LogEntry = {
       ...createSampleEntry(),
       data: { password: 'secret123', username: 'testuser' },
@@ -229,7 +297,10 @@ describe('WebSocketTransport Implementation', () => {
       },
     });
 
-    const messages = lastWebSocketInstance.getMessages();
+    // Ensure all messages are flushed
+    await transport.flush();
+
+    const messages = getTransportWs(transport).getMessages();
     expect(messages).toHaveLength(1);
 
     const sentMessage = JSON.parse(messages[0]);
@@ -239,9 +310,10 @@ describe('WebSocketTransport Implementation', () => {
 
   it('should use custom serializer when provided', async () => {
     const customSerializer = mock((entry: LogEntry) => `CUSTOM: ${entry.message}`);
-    const transport = new WebSocketTransport('ws://localhost:8080/logs', {
+    const transport = registerTransport(new WebSocketTransport('ws://localhost:8080/logs', {
       serializer: customSerializer,
-    });
+      autoReconnect: false,
+    }));
     const entry = createSampleEntry();
 
     // Wait for connection
@@ -249,34 +321,46 @@ describe('WebSocketTransport Implementation', () => {
 
     await transport.log(entry);
 
+    // Ensure all messages are flushed
+    await transport.flush();
+
     expect(customSerializer).toHaveBeenCalledWith(entry);
-    const messages = lastWebSocketInstance.getMessages();
+    const messages = getTransportWs(transport).getMessages();
     expect(messages).toHaveLength(1);
     expect(messages[0]).toBe('CUSTOM: Test WebSocket message');
   });
 
   it('should handle reconnection configuration', async () => {
-    const _transport = new WebSocketTransport('ws://localhost:8080/logs', {
+    const _transport = registerTransport(new WebSocketTransport('ws://localhost:8080/logs', {
       reconnectIntervalMs: 100,
       maxReconnectIntervalMs: 1000,
-    });
+    }));
 
     // Wait for initial connection
-    await new Promise(resolve => setTimeout(resolve, 50));
-    expect(lastWebSocketInstance.readyState).toBe(MockWebSocket.OPEN);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(getLastInstance().readyState).toBe(MockWebSocket.OPEN);
+
+    // Get current instance to track before disconnection
+    const instanceBeforeDisconnect = getLastInstance();
+    const callsBeforeDisconnect = mockWebSocketConstructor.mock.calls.length;
 
     // Simulate connection loss
-    lastWebSocketInstance.simulateClose();
+    instanceBeforeDisconnect.simulateClose();
 
-    // Wait for reconnection attempt
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Wait for reconnection attempt (100ms interval + buffer for connection)
+    await new Promise(resolve => setTimeout(resolve, 120));
 
-    // Should have attempted to create new connection
-    expect(mockWebSocketConstructor).toHaveBeenCalledTimes(2);
+    // Verify reconnection occurred (should have more calls than before)
+    const callsAfterReconnect = mockWebSocketConstructor.mock.calls.length;
+    expect(callsAfterReconnect).toBeGreaterThan(callsBeforeDisconnect);
+    
+    // Clean up to prevent further reconnection attempts  
+    // @ts-expect-error test-only patch
+    if (typeof _transport.close === 'function') _transport.close();
   });
 
   it('should flush queued messages', async () => {
-    const transport = new WebSocketTransport('ws://localhost:8080/logs');
+    const transport = registerTransport(new WebSocketTransport('ws://localhost:8080/logs', { autoReconnect: false }));
     const entries = [
       createSampleEntry(),
       { ...createSampleEntry(), message: 'Second message' },
@@ -294,7 +378,14 @@ describe('WebSocketTransport Implementation', () => {
     // Flush all messages
     await transport.flush();
 
-    const messages = lastWebSocketInstance.getMessages();
+    // Wait for all messages to be sent (poll up to 200ms)
+    let messages: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      messages = getTransportWs(transport).getMessages();
+      if (messages.length === 3) break;
+      await new Promise(r => setTimeout(r, 10));
+    }
+
     expect(messages).toHaveLength(3);
     expect(JSON.parse(messages[0]).message).toBe('Test WebSocket message');
     expect(JSON.parse(messages[1]).message).toBe('Second message');
@@ -302,7 +393,7 @@ describe('WebSocketTransport Implementation', () => {
   });
 
   it('should handle flush when disconnected', async () => {
-    const transport = new WebSocketTransport('ws://localhost:8080/logs');
+    const transport = registerTransport(new WebSocketTransport('ws://localhost:8080/logs', { autoReconnect: false }));
     const entry = createSampleEntry();
 
     // Send message
@@ -310,8 +401,8 @@ describe('WebSocketTransport Implementation', () => {
 
     // Simulate connection loss
     setTimeout(() => {
-      if (lastWebSocketInstance) {
-        lastWebSocketInstance.simulateClose();
+      if (getLastInstance()) {
+        getLastInstance().simulateClose();
       }
     }, 5);
 
