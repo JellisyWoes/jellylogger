@@ -27,9 +27,11 @@
 - 🔌 **Multiple Transports**: Console, File, Discord Webhook, and WebSocket support
 - 🎨 **Flexible Formatters**: JSON, Logfmt, NDJSON, and custom formatters
 - 🔒 **Advanced Redaction**: Comprehensive data protection with patterns and field-specific rules
-- 👶 **Child Loggers**: Context inheritance with message prefixes
+- 👶 **Child Loggers**: Context inheritance with message prefixes and persistent context
+- 🌐 **Bun HTTP Middleware**: Dedicated request logger for Bun servers with field control
 - 🔄 **File Rotation**: Automatic log rotation with compression and date-based naming
 - 📊 **Structured Logging**: Rich metadata and context support
+- 🛡️ **Internal Error Handling**: Configurable handlers for transport and formatter errors
 - 🎯 **TypeScript-First**: Full type safety with extensive type definitions
 - ⚡ **High Performance**: Optimized for speed and memory efficiency
 - 🔧 **Extensible**: Plugin architecture for custom transports and formatters
@@ -276,21 +278,61 @@ Create contextual loggers that inherit parent configuration:
 const userLogger = logger.child({ messagePrefix: 'USER' });
 userLogger.info('Login successful'); // [USER] Login successful
 
-// Child logger with data context (passed with each log)
+// Child logger with persistent context (v4.1.3+)
 const requestLogger = logger.child({
   messagePrefix: 'REQUEST',
+  context: { requestId: 'req-123', userId: 'user-456' },
 });
 
-requestLogger.info('Processing request', {
-  requestId: 'req-123',
-  userId: 'user-456',
-});
+requestLogger.info('Processing request');
+// Context automatically included: { requestId: 'req-123', userId: 'user-456', ... }
 
-// Nested child loggers
-const moduleLogger = requestLogger.child({ messagePrefix: 'AUTH' });
+// Nested child loggers merge context
+const moduleLogger = requestLogger.child({
+  messagePrefix: 'AUTH',
+  context: { authMethod: 'jwt' },
+});
 moduleLogger.warn('Invalid token');
 // [REQUEST] [AUTH] Invalid token
+// Context: { requestId: 'req-123', userId: 'user-456', authMethod: 'jwt', ... }
 ```
+
+<hr>
+<a id="bunrequestlogger"></a>
+<h2>🌐 Bun HTTP Request Logging</h2>
+
+Dedicated middleware for logging Bun HTTP server requests:
+
+```typescript
+import { bunRequestLogger } from 'jellylogger';
+
+const handler = bunRequestLogger(
+  async (req) => {
+    // Your handler logic
+    return new Response('Hello, World!');
+  },
+  {
+    includeHeaders: true,
+    includeBody: false,
+    redactHeaders: ['authorization', 'cookie', 'x-api-key'],
+    logLevel: 'info',
+    messagePrefix: 'API',
+  }
+);
+
+Bun.serve({
+  port: 3000,
+  fetch: handler,
+});
+```
+
+**Features:**
+- Automatic request/response logging
+- Configurable field inclusion (headers, body, metadata)
+- Built-in header redaction
+- Client IP address capture
+- Non-blocking async logging
+- Full redaction config support
 
 <hr>
 <a id="configuration"></a>
@@ -350,24 +392,66 @@ const transport = new FileTransport('logs/app.log', {
 ```
 
 <hr>
+<a id="errorhandling"></a>
+<h2>🛡️ Internal Error Handling</h2>
+
+Control how JellyLogger handles internal errors (transport failures, formatter issues, etc.):
+
+```typescript
+import { setInternalErrorHandler, setInternalWarningHandler } from 'jellylogger';
+
+// Register custom error handler
+setInternalErrorHandler((message, error) => {
+  // Send to monitoring service instead of console
+  monitoringService.trackError({
+    library: 'jellylogger',
+    message,
+    error: error instanceof Error ? error.message : String(error),
+  });
+});
+
+// Register custom warning handler
+setInternalWarningHandler((message, error) => {
+  // Handle warnings differently
+  console.warn(`[JellyLogger Warning] ${message}`, error);
+});
+
+// Errors in transports, formatters, redaction are now routed to your handlers
+logger.addTransport(new WebSocketTransport('ws://invalid-url'));
+logger.info('This continues to work'); // Error handled by your custom handler
+```
+
+**Benefits:**
+- Centralized error monitoring
+- Non-blocking failures (other transports continue working)
+- Integration with monitoring services
+- Consistent error handling across all JellyLogger operations
+
+<hr>
 <a id="customtransports"></a>
 <h2>🔌 Creating Custom Transports</h2>
 
 ```typescript
 import type { Transport, LogEntry, TransportOptions } from 'jellylogger';
+import { getRedactedEntry, logInternalError } from 'jellylogger';
 
 class DatabaseTransport implements Transport {
   async log(entry: LogEntry, options?: TransportOptions): Promise<void> {
-    // Apply redaction if needed
-    const redacted = getRedactedEntry(entry, options?.redaction, 'file');
+    try {
+      // Apply redaction if needed
+      const redacted = getRedactedEntry(entry, options?.redaction, 'file');
 
-    // Store in database
-    await this.database.insert('logs', {
-      timestamp: redacted.timestamp,
-      level: redacted.level,
-      message: redacted.message,
-      data: JSON.stringify(redacted.data),
-    });
+      // Store in database
+      await this.database.insert('logs', {
+        timestamp: redacted.timestamp,
+        level: redacted.level,
+        message: redacted.message,
+        data: JSON.stringify(redacted.data),
+      });
+    } catch (error) {
+      // Use internal error handler for consistent error reporting
+      logInternalError('DatabaseTransport.log failed', error);
+    }
   }
 
   async flush(): Promise<void> {
