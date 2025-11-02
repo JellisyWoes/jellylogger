@@ -1,5 +1,11 @@
 import { ConsoleTransport } from '../transports/ConsoleTransport';
 import { getTimestamp, processLogArgs } from '../utils/serialization';
+import {
+  logInternalError,
+  setInternalDebugHandler,
+  setInternalErrorHandler,
+  setInternalWarningHandler,
+} from '../utils/internalErrorHandler';
 import { LogLevel } from './constants';
 import type {
   BaseLogger,
@@ -16,10 +22,17 @@ import type {
 export class ChildLogger implements BaseLogger {
   private parent: BaseLogger;
   private options: ChildLoggerOptions;
+  private persistentData: Record<string, unknown>;
 
   constructor(parent: BaseLogger, options: ChildLoggerOptions = {}) {
     this.parent = parent;
     this.options = options;
+    
+    // Merge context and defaultData (context is an alias for defaultData)
+    this.persistentData = {
+      ...(options.defaultData ?? {}),
+      ...(options.context ?? {}),
+    };
   }
 
   private createPrefixedMessage(message: string): string {
@@ -30,12 +43,19 @@ export class ChildLogger implements BaseLogger {
 
   private log(level: LogLevel, message: string, ...optionalParams: unknown[]): void {
     const prefixedMessage = this.createPrefixedMessage(message);
+    
+    // If we have persistent data, inject it as the first parameter
+    // This ensures it gets merged with any other data objects passed
+    const paramsWithContext = Object.keys(this.persistentData).length > 0
+      ? [this.persistentData, ...optionalParams]
+      : optionalParams;
+    
     // Cast to BaseLogger with log method for type safety
     (
       this.parent as BaseLogger & {
         log: (level: LogLevel, message: string, ...args: unknown[]) => void;
       }
-    ).log(level, prefixedMessage, ...optionalParams);
+    ).log(level, prefixedMessage, ...paramsWithContext);
   }
 
   fatal(message: string, ...optionalParams: unknown[]): void {
@@ -69,9 +89,21 @@ export class ChildLogger implements BaseLogger {
         : this.options.messagePrefix
       : options.messagePrefix;
 
+    // Merge parent's persistent data with new child's data
+    // Child's data takes precedence over parent's
+    const mergedDefaultData = {
+      ...this.persistentData,
+      ...(options.defaultData ?? {}),
+    };
+    
+    const mergedContext = {
+      ...mergedDefaultData,
+      ...(options.context ?? {}),
+    };
+
     return new ChildLogger(this.parent, {
-      ...options,
       messagePrefix: combinedPrefix,
+      defaultData: mergedContext,
     });
   }
 
@@ -111,6 +143,17 @@ class JellyLoggerImpl implements IJellyLogger {
 
   setOptions(options: Partial<LoggerOptions>): void {
     this.options = { ...this.options, ...options };
+    
+    // Configure internal error handlers if provided
+    if (options.internalErrorHandler !== undefined) {
+      setInternalErrorHandler(options.internalErrorHandler);
+    }
+    if (options.internalWarningHandler !== undefined) {
+      setInternalWarningHandler(options.internalWarningHandler);
+    }
+    if (options.internalDebugHandler !== undefined) {
+      setInternalDebugHandler(options.internalDebugHandler);
+    }
   }
 
   resetOptions(): void {
@@ -170,11 +213,11 @@ class JellyLoggerImpl implements IJellyLogger {
         const result = transport.log(entry, transportOptions);
         if (result instanceof Promise) {
           result.catch((error: unknown) => {
-            console.error(`Async error in transport '${transport.constructor.name}':`, error);
+            logInternalError(`Async error in transport '${transport.constructor.name}':`, error);
           });
         }
       } catch (error) {
-        console.error(`Synchronous error in transport '${transport.constructor.name}':`, error);
+        logInternalError(`Synchronous error in transport '${transport.constructor.name}':`, error);
       }
     }
   }
@@ -214,7 +257,7 @@ class JellyLoggerImpl implements IJellyLogger {
         try {
           return transport.flush(this.options);
         } catch (error) {
-          console.error(`Error flushing transport '${transport.constructor.name}':`, error);
+          logInternalError(`Error flushing transport '${transport.constructor.name}':`, error);
           return Promise.resolve();
         }
       }

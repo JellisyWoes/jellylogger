@@ -1,3 +1,122 @@
+/**
+ * Fields that can be extracted from a Bun Request object.
+ */
+export type BunRequestField =
+  | 'method'
+  | 'url'
+  | 'headers'
+  | 'body'
+  | 'redirect'
+  | 'referrer'
+  | 'referrerPolicy'
+  | 'credentials'
+  | 'integrity'
+  | 'mode'
+  | 'cache'
+  | 'destination'
+  | 'bodyUsed'
+  | 'remoteAddress';
+
+/**
+ * Information extracted from a Bun HTTP request.
+ */
+export interface BunRequestInfo {
+  method?: string;
+  url?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  redirect?: RequestRedirect;
+  referrer?: string;
+  referrerPolicy?: string;
+  credentials?: RequestCredentials;
+  integrity?: string;
+  mode?: RequestMode;
+  cache?: RequestCache;
+  destination?: RequestDestination;
+  bodyUsed?: boolean;
+  remoteAddress?: string;
+}
+
+/**
+ * Configuration options for the Bun request logger.
+ */
+
+
+export interface BunRequestLoggerOptions {
+  /**
+   * Whether to include request headers in the log.
+   * @default true
+   */
+  includeHeaders?: boolean;
+
+  /**
+   * Whether to include the request body in the log.
+   * Note: Reading the body consumes it, so this may interfere with handlers that need the body.
+   * @default false
+   */
+  includeBody?: boolean;
+
+  /**
+   * Whether to include request metadata (redirect, referrer, referrerPolicy, credentials, integrity, mode, cache, destination, bodyUsed).
+   * @default false
+   */
+  includeMeta?: boolean;
+
+  /**
+   * Whether to include the remote address (client IP) in the log.
+   * @default true
+   */
+  includeRemoteAddress?: boolean;
+
+  /**
+   * Specific request fields to include in the log.
+   * If provided, this takes precedence over the include* boolean options.
+   * @example ['method', 'url', 'headers', 'remoteAddress']
+   */
+  fields?: BunRequestField[];
+
+  /**
+   * Specific header names to redact (case-insensitive).
+   * Commonly used for sensitive headers like 'authorization', 'cookie', 'x-api-key'.
+   * @example ['authorization', 'cookie', 'x-api-key']
+   */
+  redactHeaders?: string[];
+
+  /**
+   * Full redaction configuration for advanced use cases.
+   * If provided, this is used instead of redactHeaders.
+   */
+  redaction?: RedactionConfig;
+
+  /**
+   * Custom logger instance to use instead of the default logger.
+   */
+  logger?: JellyLogger;
+
+  /**
+   * Log level to use for request logs.
+   * @default 'info'
+   */
+  logLevel?: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
+
+  /**
+   * Custom message prefix for request logs.
+   * @default 'HTTP Request'
+   */
+  messagePrefix?: string;
+
+  /**
+   * Maximum body size in bytes to include in logs.
+   * Bodies larger than this will be truncated with a note.
+   * @default 10000 (10KB)
+   */
+  maxBodySize?: number;
+
+  /**
+   * Pluggable formatter instance for pretty/ndjson/logfmt output.
+   */
+  pluggableFormatter?: LogFormatter;
+}
 import type { LogLevel } from './constants';
 
 /**
@@ -90,6 +209,62 @@ export interface Transport {
 }
 
 /**
+ * Context provided to custom redaction functions and audit hooks.
+ */
+export interface RedactionContext {
+  /** The key being processed */
+  key: string;
+  /** Full path to the current location (e.g., 'user.credentials.password') */
+  path: string;
+  /** The field in the log entry being processed (e.g., 'args', 'data', 'message') */
+  field: string;
+  /** The original value before redaction */
+  originalValue: unknown;
+  /** Target where this redaction will be applied */
+  target?: 'console' | 'file';
+}
+
+/**
+ * Audit event information for redaction operations.
+ */
+export interface RedactionAuditEvent {
+  /** Type of redaction operation */
+  type: 'key' | 'value' | 'string' | 'custom' | 'field';
+  /** Context of the redaction */
+  context: RedactionContext;
+  /** Value before redaction */
+  before: unknown;
+  /** Value after redaction */
+  after: unknown;
+  /** Timestamp of the redaction */
+  timestamp: Date;
+  /** Rule that triggered the redaction */
+  rule?: string;
+}
+
+/**
+ * Per-field or per-path specific redaction configuration.
+ */
+export interface FieldRedactionConfig {
+  /** Specific replacement for this field/path */
+  replacement?: string | ((value: unknown, context: RedactionContext) => string);
+  /** Custom redaction function for this field/path */
+  customRedactor?: (value: unknown, context: RedactionContext) => unknown;
+  /** Whether to disable redaction for this specific field/path */
+  disabled?: boolean;
+}
+
+/**
+ * Custom redaction function type for user-defined redaction logic.
+ */
+export type CustomRedactor = (value: unknown, context: RedactionContext) => unknown;
+
+/**
+ * Audit event handler for tracking redaction operations.
+ */
+export type AuditHook = (event: RedactionAuditEvent) => void;
+
+/**
  * Configuration for sensitive data redaction.
  */
 export interface RedactionConfig {
@@ -118,63 +293,13 @@ export interface RedactionConfig {
   whitelistPatterns?: RegExp[];
 
   /** Per-field or per-path specific redaction configurations */
-  fieldConfigs?: Record<
-    string,
-    {
-      /** Specific replacement for this field/path */
-      replacement?:
-        | string
-        | ((
-            value: unknown,
-            context: {
-              key: string;
-              path: string;
-              field: string;
-              originalValue: unknown;
-              target?: 'console' | 'file';
-            }
-          ) => string);
-      /** Custom redaction function for this field/path */
-      customRedactor?: (
-        value: unknown,
-        context: {
-          key: string;
-          path: string;
-          field: string;
-          originalValue: unknown;
-          target?: 'console' | 'file';
-        }
-      ) => unknown;
-      /** Whether to disable redaction for this specific field/path */
-      disabled?: boolean;
-    }
-  >;
+  fieldConfigs?: Record<string, FieldRedactionConfig>;
 
   /** Custom redaction function that takes precedence over built-in redaction */
-  customRedactor?: (
-    value: unknown,
-    context: {
-      key: string;
-      path: string;
-      field: string;
-      originalValue: unknown;
-      target?: 'console' | 'file';
-    }
-  ) => unknown;
+  customRedactor?: CustomRedactor;
 
   /** Replacement text for redacted values or a function for custom replacement. Default: '[REDACTED]' */
-  replacement?:
-    | string
-    | ((
-        value: unknown,
-        context: {
-          key: string;
-          path: string;
-          field: string;
-          originalValue: unknown;
-          target?: 'console' | 'file';
-        }
-      ) => string);
+  replacement?: string | ((value: unknown, context: RedactionContext) => string);
 
   /** Whether to perform case-insensitive key matching. Default: true */
   caseInsensitive?: boolean;
@@ -186,20 +311,7 @@ export interface RedactionConfig {
   auditRedaction?: boolean;
 
   /** Custom audit hook function for handling redaction events */
-  auditHook?: (event: {
-    type: 'key' | 'value' | 'string' | 'custom' | 'field';
-    context: {
-      key: string;
-      path: string;
-      field: string;
-      originalValue: unknown;
-      target?: 'console' | 'file';
-    };
-    before: unknown;
-    after: unknown;
-    timestamp: Date;
-    rule?: string;
-  }) => void;
+  auditHook?: AuditHook;
 
   /** Whether to deep clone objects before redaction to avoid mutating originals. Default: true */
   deepClone?: boolean;
@@ -232,6 +344,12 @@ export interface LoggerOptions {
   discordWebhookUrl?: string;
   /** Context for this logger */
   context?: Record<string, unknown>;
+  /** Custom handler for library internal errors. If not provided, console.error is used. */
+  internalErrorHandler?: (message: string, error?: unknown) => void;
+  /** Custom handler for library internal warnings. If not provided, console.warn is used. */
+  internalWarningHandler?: (message: string, error?: unknown) => void;
+  /** Custom handler for library internal debug messages. If not provided, console.debug is used. */
+  internalDebugHandler?: (message: string, data?: unknown) => void;
   /** Index signature to allow additional properties and ensure compatibility with TransportOptions */
   [key: string]: unknown;
 }

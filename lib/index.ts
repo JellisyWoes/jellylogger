@@ -9,6 +9,11 @@ export type {
   LogEntry,
   LoggerOptions,
   RedactionConfig,
+  RedactionContext,
+  RedactionAuditEvent,
+  FieldRedactionConfig,
+  CustomRedactor,
+  AuditHook,
   TransportOptions,
 } from './core/types';
 export type { LogRotationConfig } from './transports/FileTransport';
@@ -56,6 +61,29 @@ export {
   shouldRedactValue,
 } from './redaction';
 
+// Re-export internal error handlers
+export {
+  logInternalDebug,
+  logInternalError,
+  logInternalWarning,
+  setInternalDebugHandler,
+  setInternalErrorHandler,
+  setInternalWarningHandler,
+} from './utils/internalErrorHandler';
+export type {
+  InternalDebugHandler,
+  InternalErrorHandler,
+  InternalWarningHandler,
+} from './utils/internalErrorHandler';
+
 // Add missing type exports that are in the .d.ts
 export type { DiscordRateLimitResponse } from './transports/DiscordWebhookTransport';
 export type { InjectedBunFileOperations } from './transports/FileTransport';
+
+// Bun HTTP request logger utility
+export { bunRequestLogger } from './utils/bunRequestLogger';
+export type {
+  BunRequestField,
+  BunRequestInfo,
+  BunRequestLoggerOptions,
+} from './core/types';
